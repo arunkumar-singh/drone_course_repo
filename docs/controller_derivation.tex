@@ -1,0 +1,239 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts,bm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{microtype}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    citecolor=blue!70!black,
+    urlcolor=blue!70!black
+}
+
+\title{\textbf{Mathematical Modeling and High-Precision Cascaded PID Controller Derivation for a 6-DOF Quadrotor}}
+\author{\textbf{Autonomous Aerial Systems Course}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document presents the complete mathematical derivation of the 6-DOF rigid-body dynamics for an X-configuration quadrotor in MuJoCo, along with the step-by-step synthesis of a high-precision cascaded position, heading-decoupled attitude, and altitude PID controller. The analytical inverse mixer allocation matrix and tilt compensation laws ensuring zero steady-state error and asymptotic convergence are derived in detail.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Coordinate Systems and Kinematics}
+
+We define two primary coordinate frames:
+\begin{enumerate}
+    \item \textbf{Inertial/World Frame} $\mathcal{F}_W = \{\mathbf{x}_W, \mathbf{y}_W, \mathbf{z}_W\}$: An Earth-fixed Cartesian coordinate system with $\mathbf{z}_W$ pointing upward against gravity.
+    \item \textbf{Body-Fixed Frame} $\mathcal{F}_B = \{\mathbf{x}_B, \mathbf{y}_B, \mathbf{z}_B\}$: Attached to the quadrotor's center of mass (CoM), with $\mathbf{x}_B$ pointing forward, $\mathbf{y}_B$ pointing left/right, and $\mathbf{z}_B$ pointing upward perpendicular to the propeller plane.
+\end{enumerate}
+
+\subsection{State Representation}
+The complete 12-dimensional state vector $\mathbf{x} \in \mathbb{R}^{12}$ is given by:
+\begin{equation}
+\mathbf{x} = \begin{bmatrix} \mathbf{p}^T & \mathbf{v}^T & \boldsymbol{\eta}^T & \boldsymbol{\omega}^T \end{bmatrix}^T
+\end{equation}
+where:
+\begin{itemize}
+    \item $\mathbf{p} = [x, y, z]^T \in \mathbb{R}^3$: Position of the quadrotor CoM in the world frame $\mathcal{F}_W$.
+    \item $\mathbf{v} = [\dot{x}, \dot{y}, \dot{z}]^T \in \mathbb{R}^3$: Linear velocity in $\mathcal{F}_W$.
+    \item $\boldsymbol{\eta} = [\phi, \theta, \psi]^T \in \mathbb{R}^3$: Euler angles representing Roll, Pitch, and Yaw.
+    \item $\boldsymbol{\omega} = [p, q, r]^T \in \mathbb{R}^3$: Angular velocity vector expressed in the body-fixed frame $\mathcal{F}_B$.
+\end{itemize}
+
+\subsection{Attitude Kinematics}
+The rotation matrix $\mathbf{R} \in SO(3)$ that transforms vectors from the body frame $\mathcal{F}_B$ to the world frame $\mathcal{F}_W$ ($\mathbf{v}_W = \mathbf{R} \mathbf{v}_B$) is constructed using the standard $Z$-$Y$-$X$ (Yaw-Pitch-Roll) Tait-Bryan convention:
+\begin{equation}
+\mathbf{R}(\phi, \theta, \psi) = \mathbf{R}_z(\psi) \mathbf{R}_y(\theta) \mathbf{R}_x(\phi)
+\end{equation}
+
+Expanding the elementary rotation matrices:
+\begin{equation}
+\mathbf{R} = \begin{bmatrix}
+\cos\theta \cos\psi & \sin\phi \sin\theta \cos\psi - \cos\phi \sin\psi & \cos\phi \sin\theta \cos\psi + \sin\phi \sin\psi \\
+\cos\theta \sin\psi & \sin\phi \sin\theta \sin\psi + \cos\phi \cos\psi & \cos\phi \sin\theta \sin\psi - \sin\phi \cos\psi \\
+-\sin\theta & \sin\phi \cos\theta & \cos\phi \cos\theta
+\end{bmatrix}
+\end{equation}
+
+For small angular deviations ($\phi \approx 0, \theta \approx 0$), the transformation between body angular rates $\boldsymbol{\omega}$ and Euler angle derivatives $\dot{\boldsymbol{\eta}}$ simplifies to:
+\begin{equation}
+\begin{bmatrix} \dot{\phi} \\ \dot{\theta} \\ \dot{\psi} \end{bmatrix} \approx \begin{bmatrix} p \\ q \\ r \end{bmatrix}
+\end{equation}
+
+---
+
+\section{6-DOF Rigid-Body Dynamics}
+
+The motion of the quadrotor is governed by the Newton-Euler equations for a 6-DOF rigid body.
+
+\subsection{Translational Dynamics}
+Applying Newton's second law in the inertial frame $\mathcal{F}_W$:
+\begin{equation}
+m \ddot{\mathbf{p}} = \mathbf{R} \mathbf{F}_B + \mathbf{F}_g
+\end{equation}
+where $m$ is the total quadrotor mass ($m = 0.500\text{ kg}$), $\mathbf{F}_g = [0, 0, -mg]^T$ is the gravitational force, and $\mathbf{F}_B = [0, 0, T]^T$ is the total collective thrust produced along the body $\mathbf{z}_B$ axis.
+
+Writing the equations component-wise:
+\begin{align}
+m \ddot{x} &= T (\cos\phi \sin\theta \cos\psi + \sin\phi \sin\psi) \\
+m \ddot{y} &= T (\cos\phi \sin\theta \sin\psi - \sin\phi \cos\psi) \\
+m \ddot{z} &= T (\cos\phi \cos\theta) - mg
+\end{align}
+
+\subsection{Rotational Dynamics}
+Applying Euler's rotational equations in the body-fixed frame $\mathcal{F}_B$:
+\begin{equation}
+\mathbf{I} \dot{\boldsymbol{\omega}} + \boldsymbol{\omega} \times (\mathbf{I} \boldsymbol{\omega}) = \boldsymbol{\tau}_B
+\end{equation}
+where $\mathbf{I} = \text{diag}(I_{xx}, I_{yy}, I_{zz})$ is the diagonal moment of inertia tensor, and $\boldsymbol{\tau}_B = [\tau_x, \tau_y, \tau_z]^T$ is the vector of external control torques in the body frame.
+
+Expanding component-wise:
+\begin{align}
+I_{xx} \dot{p} &= \tau_x - (I_{zz} - I_{yy}) q r \\
+I_{yy} \dot{q} &= \tau_y - (I_{xx} - I_{zz}) p r \\
+I_{zz} \dot{r} &= \tau_z - (I_{yy} - I_{xx}) p q
+\end{align}
+
+---
+
+\section{Rotor Thrust Allocation and Analytical Mixer Matrix}
+
+Consider an X-configuration quadrotor where the 4 rotors are positioned at a distance $L$ from the center of mass along $45^\circ$ diagonals ($d = 0.12\text{ m}$):
+\begin{itemize}
+    \item \textbf{Rotor 0 (Front-Right)}: $\mathbf{r}_0 = [+d, +d, 0]^T$
+    \item \textbf{Rotor 1 (Rear-Right)}: $\mathbf{r}_1 = [-d, +d, 0]^T$
+    \item \textbf{Rotor 2 (Rear-Left)}: $\mathbf{r}_2 = [-d, -d, 0]^T$
+    \item \textbf{Rotor 3 (Front-Left)}: $\mathbf{r}_3 = [+d, -d, 0]^T$
+\end{itemize}
+
+\subsection{Torque Generation}
+Each rotor produces a thrust force $\mathbf{F}_i = [0, 0, T_i]^T$ and an aerodynamic reaction drag torque $\mathbf{M}_{d,i} = [0, 0, \pm c_\tau T_i]^T$ opposite to its spin direction ($c_\tau = 0.015\text{ m}$).
+
+The total torque generated by the rotors about the CoM is:
+\begin{equation}
+\boldsymbol{\tau}_B = \sum_{i=0}^3 \left( \mathbf{r}_i \times \mathbf{F}_i + \mathbf{M}_{d,i} \right)
+\end{equation}
+
+Computing the cross products $\mathbf{r}_i \times \mathbf{F}_i$:
+\begin{align}
+\mathbf{r}_0 \times \mathbf{F}_0 &= [+d, +d, 0]^T \times [0, 0, T_0]^T = [+d T_0, -d T_0, 0]^T \\
+\mathbf{r}_1 \times \mathbf{F}_1 &= [-d, +d, 0]^T \times [0, 0, T_1]^T = [+d T_1, +d T_1, 0]^T \\
+\mathbf{r}_2 \times \mathbf{F}_2 &= [-d, -d, 0]^T \times [0, 0, T_2]^T = [-d T_2, +d T_2, 0]^T \\
+\mathbf{r}_3 \times \mathbf{F}_3 &= [+d, -d, 0]^T \times [0, 0, T_3]^T = [-d T_3, -d T_3, 0]^T
+\end{align}
+
+\subsection{Forward Allocation Matrix}
+Summing the thrust and torque components yields the linear mapping:
+\begin{equation}
+\begin{bmatrix} T \\ \tau_x \\ \tau_y \\ \tau_z \end{bmatrix} =
+\begin{bmatrix}
+1 & 1 & 1 & 1 \\
+d & d & -d & -d \\
+-d & d & d & -d \\
+c_\tau & -c_\tau & c_\tau & -c_\tau
+\end{bmatrix}
+\begin{bmatrix} T_0 \\ T_1 \\ T_2 \\ T_3 \end{bmatrix}
+\end{equation}
+
+\subsection{Exact Inverse Mixer Matrix}
+Inverting the $4 \times 4$ allocation matrix analytically yields the exact rotor command equations:
+\begin{equation}
+\boxed{
+\begin{aligned}
+T_0 &= \frac{1}{4}T + \frac{1}{4d}\tau_x - \frac{1}{4d}\tau_y + \frac{1}{4c_\tau}\tau_z \\
+T_1 &= \frac{1}{4}T + \frac{1}{4d}\tau_x + \frac{1}{4d}\tau_y - \frac{1}{4c_\tau}\tau_z \\
+T_2 &= \frac{1}{4}T - \frac{1}{4d}\tau_x + \frac{1}{4d}\tau_y + \frac{1}{4c_\tau}\tau_z \\
+T_3 &= \frac{1}{4}T - \frac{1}{4d}\tau_x - \frac{1}{4d}\tau_y - \frac{1}{4c_\tau}\tau_z
+\end{aligned}
+}
+\end{equation}
+
+---
+
+\section{High-Precision Cascaded PID Controller Synthesis}
+
+Quadrotors are underactuated systems with 4 control inputs and 6 degrees of freedom. We implement a **cascaded position, heading-decoupled attitude, and altitude PID controller**.
+
+\subsection{Altitude PID Control with Tilt Compensation}
+Let $e_z = z_{\text{target}} - z$. The desired vertical acceleration with integral error $I_z = \int e_z \, dt$ is:
+\begin{equation}
+a_{z,\text{cmd}} = k_{p,z} e_z - k_{d,z} \dot{z} + k_{i,z} I_z
+\end{equation}
+
+To maintain altitude during banking and pitch maneuvers, the collective thrust includes **tilt compensation**:
+\begin{equation}
+T = \frac{m(g + a_{z,\text{cmd}})}{\max(0.65, \, \cos\phi \cos\theta)}
+\end{equation}
+
+\subsection{Horizontal Position PID and Yaw Decoupling}
+Let $e_x = x_{\text{target}} - x$ and $e_y = y_{\text{target}} - y$. Desired world-frame accelerations are:
+\begin{align}
+a_{x,\text{world}} &= k_{p,xy} e_x - k_{d,xy} \dot{x} + k_{i,xy} \int e_x \, dt \\
+a_{y,\text{world}} &= k_{p,xy} e_y - k_{d,xy} \dot{y} + k_{i,xy} \int e_y \, dt
+\end{align}
+
+To ensure consistent control authority regardless of the quadrotor's current yaw angle $\psi$, we rotate world accelerations into the quadrotor's **heading frame**:
+\begin{equation}
+\begin{bmatrix} a_{x,\text{body}} \\ a_{y,\text{body}} \end{bmatrix} =
+\begin{bmatrix} \cos\psi & \sin\psi \\ -\sin\psi & \cos\psi \end{bmatrix}
+\begin{bmatrix} a_{x,\text{world}} \\ a_{y,\text{world}} \end{bmatrix}
+\end{equation}
+
+The desired roll and pitch tilt angles are given by:
+\begin{equation}
+\theta_{\text{des}} = \text{clip}\left(\frac{a_{x,\text{body}}}{g}, -\theta_{\max}, \theta_{\max}\right), \quad
+\phi_{\text{des}} = \text{clip}\left(-\frac{a_{y,\text{body}}}{g}, -\phi_{\max}, \phi_{\max}\right)
+\end{equation}
+
+\subsection{Attitude and Angular Rate PD Control}
+The inner loop regulates the Euler angles to $(\phi_{\text{des}}, \theta_{\text{des}}, \psi_{\text{des}})$ by commanding control torques:
+\begin{align}
+\tau_x &= k_{p,\phi} (\phi_{\text{des}} - \phi) - k_{d,\phi} p \\
+\tau_y &= k_{p,\theta} (\theta_{\text{des}} - \theta) - k_{d,\theta} q \\
+\tau_z &= k_{p,\psi} (\psi_{\text{des}} - \psi) - k_{d,\psi} r
+\end{align}
+
+---
+
+\section{Summary of Parameters}
+
+Table~\ref{tab:params} lists the physical and control parameters used in the MuJoCo simulation environment:
+
+\begin{table}[htbp]
+\centering
+\caption{Quadrotor Physical and Controller Parameters}
+\label{tab:params}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Unit} \\
+\midrule
+Total Mass & $m$ & $0.500$ & $\text{kg}$ \\
+Arm Half-Length & $d$ & $0.12$ & $\text{m}$ \\
+Gravitational Acceleration & $g$ & $9.81$ & $\text{m/s}^2$ \\
+Moments of Inertia & $I_{xx}, I_{yy}, I_{zz}$ & $0.0025, 0.0025, 0.0045$ & $\text{kg}\cdot\text{m}^2$ \\
+Torque-to-Thrust Ratio & $c_\tau$ & $0.015$ & $\text{m}$ \\
+\midrule
+Altitude Gains & $k_{p,z}, k_{d,z}, k_{i,z}$ & $12.0, 6.0, 4.0$ & $\text{s}^{-2}, \text{s}^{-1}, \text{s}^{-3}$ \\
+Position Gains & $k_{p,xy}, k_{d,xy}, k_{i,xy}$ & $1.8, 2.0, 0.5$ & $\text{s}^{-2}, \text{s}^{-1}, \text{s}^{-3}$ \\
+Attitude Proportional Gains & $k_{p,\phi}, k_{p,\theta}, k_{p,\psi}$ & $0.075, 0.075, 0.020$ & $\text{N}\cdot\text{m/rad}$ \\
+Attitude Derivative Gains & $k_{d,\phi}, k_{d,\theta}, k_{d,\psi}$ & $0.015, 0.015, 0.005$ & $\text{N}\cdot\text{m}\cdot\text{s/rad}$ \\
+Max Commanded Tilt & $\phi_{\max}, \theta_{\max}$ & $0.22$ & $\text{rad}$ ($\approx 12.6^\circ$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

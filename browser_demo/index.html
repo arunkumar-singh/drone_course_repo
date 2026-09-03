@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>6-DOF Quadrotor Interactive Flight & Single-Integrator PID Simulator</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    input[type=range] { accent-color: #3b82f6; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans select-none overflow-x-hidden">
+
+  <!-- Top Navigation Header -->
+  <header class="bg-slate-900 border-b border-slate-800 px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-2xl shadow-lg shadow-blue-500/25">🚁</div>
+      <div>
+        <h1 class="text-base font-bold text-white tracking-wide">6-DOF Quadrotor Flight Dynamics & Control Simulator</h1>
+        <p class="text-xs text-slate-400">Real-time 3D Attitude Tilt, True Orthogonal Perspective & Single-Integrator PID</p>
+      </div>
+    </div>
+
+    <!-- Mode Selector Tabs -->
+    <div class="flex items-center bg-slate-800/90 p-1 rounded-xl border border-slate-700">
+      <button id="tab-manual" onclick="setMode('manual')" class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all bg-blue-600 text-white shadow">
+        🎮 Manual Attitude & Thrust
+      </button>
+      <button id="tab-pid" onclick="setMode('pid')" class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-300 hover:text-white">
+        🎯 Waypoint PID Autopilot
+      </button>
+    </div>
+
+    <!-- Camera View Presets -->
+    <div class="flex items-center gap-2">
+      <button onclick="setCameraView('side_level')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition flex items-center gap-1">
+        📐 Level Side (0° Horizon)
+      </button>
+      <button onclick="setCameraView('orbit_3d')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition flex items-center gap-1">
+        🌐 3D Perspective
+      </button>
+      <button onclick="resetSimulation()" class="px-3 py-1.5 bg-blue-600/80 hover:bg-blue-600 text-white text-xs font-medium rounded-lg shadow transition flex items-center gap-1">
+        🔄 Reset to Hover (1.5m)
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Viewport and Sidebar -->
+  <div class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+    
+    <!-- 3D Canvas Simulation Area -->
+    <div class="flex-1 relative bg-slate-950 flex flex-col min-h-[480px] lg:min-h-0">
+      <canvas id="sim-canvas" class="w-full h-full cursor-grab active:cursor-grabbing block"></canvas>
+      
+      <!-- Top-Left Status Overlay -->
+      <div class="absolute top-4 left-4 pointer-events-none flex flex-col gap-2">
+        <div class="bg-slate-900/90 backdrop-blur border border-slate-800 px-3 py-1.5 rounded-lg text-xs flex items-center gap-2 shadow-lg">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-slate-200 font-medium">Physics: 60 Hz 6-DOF Dynamics</span>
+          <span class="text-slate-600">|</span>
+          <span id="overlay-mode-badge" class="text-blue-400 font-semibold">Manual Mode</span>
+        </div>
+        <div class="bg-slate-900/80 backdrop-blur border border-slate-800 px-3 py-1.5 rounded-lg text-[11px] text-slate-300">
+          🖱️ <span class="text-amber-400 font-medium">Drag</span> to rotate camera • <span class="text-amber-400 font-medium">Scroll</span> to zoom
+        </div>
+      </div>
+
+      <!-- Top-Right: Primary Flight Display (PFD) / Artificial Horizon Widget -->
+      <div class="absolute top-4 right-4 pointer-events-none bg-slate-900/90 backdrop-blur border border-slate-800 p-3 rounded-2xl shadow-xl flex flex-col items-center gap-2">
+        <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Attitude Horizon (PFD)</div>
+        <canvas id="pfd-canvas" width="130" height="130" class="rounded-xl border border-slate-800 bg-slate-950"></canvas>
+        <div class="flex justify-between w-full text-[10px] mono text-slate-300 px-1">
+          <span>Pitch: <b id="pfd-pitch" class="text-amber-400">0.0°</b></span>
+          <span>Roll: <b id="pfd-roll" class="text-indigo-400">0.0°</b></span>
+        </div>
+      </div>
+
+      <!-- Bottom Telemetry HUD Bar -->
+      <div class="absolute bottom-4 left-4 right-4 lg:right-auto pointer-events-none flex flex-wrap gap-2">
+        <div class="bg-slate-900/95 backdrop-blur border border-slate-800 px-4 py-2.5 rounded-2xl text-xs flex items-center gap-5 shadow-xl">
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Altitude (Z)</div>
+            <div class="text-base font-bold mono">
+              <span id="hud-z" class="text-emerald-400">1.50</span> <span class="text-xs font-normal text-slate-400">m</span>
+            </div>
+          </div>
+          <div class="w-px h-8 bg-slate-800"></div>
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Vertical Velocity (Vz)</div>
+            <div class="text-base font-bold mono">
+              <span id="hud-vz" class="text-cyan-400">0.00</span> <span class="text-xs font-normal text-slate-400">m/s</span>
+            </div>
+          </div>
+          <div class="w-px h-8 bg-slate-800"></div>
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Horizontal Speed</div>
+            <div class="text-base font-bold mono">
+              <span id="hud-vxy" class="text-blue-400">0.00</span> <span class="text-xs font-normal text-slate-400">m/s</span>
+            </div>
+          </div>
+          <div class="w-px h-8 bg-slate-800"></div>
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Total Thrust</div>
+            <div class="text-base font-bold mono">
+              <span id="hud-thrust" class="text-amber-400">4.91</span> <span class="text-xs font-normal text-slate-400">N</span>
+            </div>
+          </div>
+          <div class="w-px h-8 bg-slate-800"></div>
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Flight Status</div>
+            <div class="text-xs font-bold" id="hud-status">
+              <span class="text-emerald-400">🟢 Airborne (Level Hover)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Control Panel -->
+    <div class="w-full lg:w-96 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 p-5 flex flex-col gap-5 overflow-y-auto max-h-[50vh] lg:max-h-none">
+      
+      <!-- ==================== MANUAL MODE CONTROLS ==================== -->
+      <div id="panel-manual" class="flex flex-col gap-4">
+        <div>
+          <h2 class="text-sm font-bold text-white flex items-center justify-between">
+            <span>Direct Attitude & Thrust Play</span>
+            <span class="text-[11px] font-normal text-emerald-400 mono">m = 0.5kg (mg=4.91N)</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">When Roll=0° and Pitch=0°, the quadrotor hovers <b>perfectly horizontal</b>. Adjusting pitch or roll tilts the vehicle and accelerates it in 3D.</p>
+        </div>
+
+        <!-- Thrust Slider with 0N and 2g presets -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2">
+          <div class="flex justify-between items-center text-xs">
+            <span class="font-medium text-slate-200">Total Thrust ($T$)</span>
+            <span class="mono text-blue-400 font-bold" id="val-thrust">4.91 N (100% Hover)</span>
+          </div>
+          <input id="slider-thrust" type="range" min="0" max="9.81" step="0.05" value="4.905" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <div class="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
+            <button onclick="setThrust(0.0)" class="px-2 py-0.5 bg-red-950/80 hover:bg-red-900 text-red-300 rounded border border-red-800/60 font-semibold transition">
+              ⬇️ 0 N (Drop / Free-Fall)
+            </button>
+            <button onclick="setThrust(4.905)" class="px-2 py-0.5 bg-blue-950/80 hover:bg-blue-900 text-blue-300 rounded border border-blue-800/60 font-semibold transition">
+              ⚖️ Hover (4.91 N)
+            </button>
+            <button onclick="setThrust(8.5)" class="px-2 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 rounded border border-emerald-800/60 font-semibold transition">
+              ⬆️ Climb (8.5 N)
+            </button>
+          </div>
+        </div>
+
+        <!-- Pitch Slider -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2">
+          <div class="flex justify-between items-center text-xs">
+            <span class="font-medium text-slate-200">Pitch Angle ($\theta$) - Tilt Forward / Back</span>
+            <span class="mono text-amber-400 font-bold" id="val-pitch">0.0°</span>
+          </div>
+          <input id="slider-pitch" type="range" min="-35" max="35" step="1" value="0" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <div class="flex justify-between items-center text-[10px] text-slate-400">
+            <button onclick="setPitch(-20)" class="hover:text-amber-300">-20° (Fly Back)</button>
+            <button onclick="setPitch(0)" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px]">0° Level</button>
+            <button onclick="setPitch(20)" class="hover:text-amber-300">+20° (Fly Forward)</button>
+          </div>
+        </div>
+
+        <!-- Roll Slider -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2">
+          <div class="flex justify-between items-center text-xs">
+            <span class="font-medium text-slate-200">Roll Angle ($\phi$) - Bank Left / Right</span>
+            <span class="mono text-indigo-400 font-bold" id="val-roll">0.0°</span>
+          </div>
+          <input id="slider-roll" type="range" min="-35" max="35" step="1" value="0" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <div class="flex justify-between items-center text-[10px] text-slate-400">
+            <button onclick="setRoll(-20)" class="hover:text-indigo-300">-20° (Bank Left)</button>
+            <button onclick="setRoll(0)" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px]">0° Level</button>
+            <button onclick="setRoll(20)" class="hover:text-indigo-300">+20° (Bank Right)</button>
+          </div>
+        </div>
+
+        <!-- Yaw Slider -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2">
+          <div class="flex justify-between items-center text-xs">
+            <span class="font-medium text-slate-200">Yaw Heading ($\psi$)</span>
+            <span class="mono text-teal-400 font-bold" id="val-yaw">0.0°</span>
+          </div>
+          <input id="slider-yaw" type="range" min="-180" max="180" step="5" value="0" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer">
+        </div>
+
+        <!-- Quick Flight Maneuver Buttons -->
+        <div class="flex flex-col gap-2">
+          <span class="text-xs font-semibold text-slate-300">Quick Flight Combinations</span>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <button onclick="setPreset(0, 18, 5.2)" class="p-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-200 border border-slate-700 text-left transition flex flex-col">
+              <span class="font-bold text-white">🚀 Pitch Forward</span>
+              <span class="text-[10px] text-slate-400">+18° Pitch, 5.2N Thrust</span>
+            </button>
+            <button onclick="setPreset(18, 0, 5.2)" class="p-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-200 border border-slate-700 text-left transition flex flex-col">
+              <span class="font-bold text-white">↪️ Bank Right</span>
+              <span class="text-[10px] text-slate-400">+18° Roll, 5.2N Thrust</span>
+            </button>
+            <button onclick="setPreset(15, 15, 5.4)" class="p-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-200 border border-slate-700 text-left transition flex flex-col">
+              <span class="font-bold text-white">↗️ Diagonal Cruise</span>
+              <span class="text-[10px] text-slate-400">+15° Roll & Pitch, 5.4N</span>
+            </button>
+            <button onclick="setPreset(0, 0, 4.905)" class="p-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-200 border border-slate-700 text-left transition flex flex-col">
+              <span class="font-bold text-white">🛑 Level Hover</span>
+              <span class="text-[10px] text-slate-400">0° Tilt, 4.91N Thrust</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Keyboard Controls Help -->
+        <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
+          <div class="font-semibold text-slate-300 mb-1">⌨️ Keyboard Real-time Controls:</div>
+          <div class="grid grid-cols-2 gap-x-2 gap-y-1">
+            <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-white font-mono">W</kbd>/<kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-white font-mono">S</kbd>: Pitch Forward/Back</span>
+            <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-white font-mono">A</kbd>/<kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-white font-mono">D</kbd>: Roll Left/Right</span>
+            <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-white font-mono">Space</kbd>: Thrust Up</span>
+            <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-white font-mono">Shift</kbd>: Thrust Down (0N)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== PID AUTOPILOT CONTROLS ==================== -->
+      <div id="panel-pid" class="hidden flex flex-col gap-4">
+        <div>
+          <h2 class="text-sm font-bold text-white flex items-center justify-between">
+            <span>Single-Integrator PID Waypoint Autopilot</span>
+            <span class="text-[11px] font-semibold text-emerald-400">Closed-Loop</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">The PID calculates velocity commands ($\mathbf{v}_{\text{cmd}}$) and translates them into tilt angles $\theta_{\text{cmd}}, \phi_{\text{cmd}}$ and thrust $T$.</p>
+        </div>
+
+        <!-- Target Waypoint Selection -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-3">
+          <span class="text-xs font-semibold text-slate-200 flex items-center justify-between">
+            <span>Target 3D Waypoint</span>
+            <span class="text-amber-400 font-bold mono" id="val-target">[0.0, 0.0, 1.5]</span>
+          </span>
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <div>
+              <label class="text-[10px] text-slate-400">Target X (m)</label>
+              <input id="tgt-x" type="number" step="0.2" value="0.0" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white font-mono text-center">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400">Target Y (m)</label>
+              <input id="tgt-y" type="number" step="0.2" value="0.0" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white font-mono text-center">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400">Target Z (m)</label>
+              <input id="tgt-z" type="number" step="0.2" value="1.5" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white font-mono text-center">
+            </div>
+          </div>
+          <button onclick="applyTargetInputs()" class="w-full py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-semibold text-white transition">
+            Apply Target Waypoint
+          </button>
+        </div>
+
+        <!-- PID Gains Adjustment -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-3">
+          <div class="flex justify-between items-center text-xs">
+            <span class="font-semibold text-slate-200">PID Controller Gains</span>
+            <button onclick="resetPidGains()" class="text-[10px] text-blue-400 hover:underline">Reset Defaults</button>
+          </div>
+
+          <!-- Kp -->
+          <div class="flex flex-col gap-1">
+            <div class="flex justify-between text-xs">
+              <span class="text-slate-400">Proportional ($K_p$) - Position Spring:</span>
+              <span class="mono text-emerald-400 font-bold" id="val-kp">2.2</span>
+            </div>
+            <input id="slider-kp" type="range" min="0.2" max="5.0" step="0.1" value="2.2" class="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer">
+          </div>
+
+          <!-- Ki -->
+          <div class="flex flex-col gap-1">
+            <div class="flex justify-between text-xs">
+              <span class="text-slate-400">Integral ($K_i$) - Eliminates Steady Error:</span>
+              <span class="mono text-emerald-400 font-bold" id="val-ki">0.4</span>
+            </div>
+            <input id="slider-ki" type="range" min="0.0" max="2.0" step="0.05" value="0.4" class="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer">
+          </div>
+
+          <!-- Kd -->
+          <div class="flex flex-col gap-1">
+            <div class="flex justify-between text-xs">
+              <span class="text-slate-400">Derivative ($K_d$) - Velocity Damper:</span>
+              <span class="mono text-emerald-400 font-bold" id="val-kd">1.8</span>
+            </div>
+            <input id="slider-kd" type="range" min="0.2" max="4.0" step="0.1" value="1.8" class="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer">
+          </div>
+        </div>
+
+        <!-- Waypoint Mission Presets -->
+        <div class="flex flex-col gap-2">
+          <span class="text-xs font-semibold text-slate-300">Automated Flight Missions</span>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <button onclick="startWaypointTour()" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 text-left transition">
+              🗺️ 3D Square Tour
+            </button>
+            <button onclick="startStepResponse()" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 text-left transition">
+              📈 Step Response (+1.5m)
+            </button>
+            <button onclick="startCircleTrajectory()" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 text-left transition">
+              ⭕ Orbit Circle
+            </button>
+            <button onclick="setTarget([0, 0, 1.5])" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 border border-slate-700 text-left transition">
+              🏠 Center Hover
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== ROTOR FORCES ==================== -->
+      <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2 mt-auto">
+        <span class="text-xs font-semibold text-slate-300">Individual Rotor Thrusts (X-Configuration)</span>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800 flex justify-between">
+            <span class="text-red-400 font-medium">M0 (Front-R):</span>
+            <span class="mono font-bold" id="val-t0">1.23 N</span>
+          </div>
+          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800 flex justify-between">
+            <span class="text-red-400 font-medium">M3 (Front-L):</span>
+            <span class="mono font-bold" id="val-t3">1.23 N</span>
+          </div>
+          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800 flex justify-between">
+            <span class="text-blue-400 font-medium">M1 (Rear-R):</span>
+            <span class="mono font-bold" id="val-t1">1.23 N</span>
+          </div>
+          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800 flex justify-between">
+            <span class="text-blue-400 font-medium">M2 (Rear-L):</span>
+            <span class="mono font-bold" id="val-t2">1.23 N</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Simulation JavaScript -->
+  <script>
+    // --- Physics Model Constants ---
+    const MASS = 0.500;            // kg
+    const G = 9.81;                // m/s^2
+    const HOVER_THRUST = MASS * G; // 4.905 N
+    const DT = 1.0 / 60.0;         // 60 Hz physics step
+    const DRAG = 0.35;             // Linear aerodynamic drag
+    const GROUND_Z = 0.08;         // Ground floor collision level (meters)
+
+    // --- State Vector ---
+    let drone = {
+      pos: [0.0, 0.0, 1.5],          // Start at 1.5 meters altitude
+      vel: [0.0, 0.0, 0.0],          // vx, vy, vz (m/s)
+      roll: 0.0, pitch: 0.0, yaw: 0.0, // Radians
+      cmdRoll: 0.0, cmdPitch: 0.0, cmdYaw: 0.0,
+      cmdThrust: HOVER_THRUST,
+      actualThrust: HOVER_THRUST,
+      rotorThrusts: [1.226, 1.226, 1.226, 1.226],
+      rotorSpin: 0.0,
+      onGround: false,
+      contactAnimation: 0.0
+    };
+
+    let target = [0.0, 0.0, 1.5];
+    let trail = [];
+
+    // --- Modes ---
+    let currentMode = 'manual'; // 'manual' | 'pid'
+
+    // --- Single-Integrator PID Gains ---
+    let pid = {
+      kp: 2.2,
+      ki: 0.4,
+      kd: 1.8,
+      int_x: 0.0,
+      int_y: 0.0,
+      int_z: 0.0
+    };
+
+    // --- Mission Waypoints ---
+    let missionWaypoints = [];
+    let missionIndex = 0;
+    let missionTimer = 0;
+    let orbitAngle = 0.0;
+
+    // --- Camera & Viewport ---
+    // Start with a true level perspective where horizontal is 100% horizontal
+    let cam = {
+      yaw: 0.0,          // Viewed along the primary axis (facing forward)
+      pitch: 0.20,       // Gentle 11-degree elevation so 3D structure is visible without distorting level horizon
+      dist: 5.2,
+      isDragging: false,
+      lastMouseX: 0,
+      lastMouseY: 0
+    };
+
+    function setCameraView(type) {
+      if (type === 'side_level') {
+        cam.yaw = -Math.PI / 2.0; // True side view perpendicular to X-axis
+        cam.pitch = 0.0;          // True 0-degree horizon elevation
+        cam.dist = 5.0;
+      } else if (type === 'orbit_3d') {
+        cam.yaw = -0.45;
+        cam.pitch = 0.28;
+        cam.dist = 5.2;
+      }
+    }
+
+    // --- Canvas & PFD Contexts ---
+    const canvas = document.getElementById('sim-canvas');
+    const ctx = canvas.getContext('2d');
+
+    const pfdCanvas = document.getElementById('pfd-canvas');
+    const pfdCtx = pfdCanvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = canvas.parentElement.clientWidth;
+      canvas.height = canvas.parentElement.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // --- Mouse Orbit Controls ---
+    canvas.addEventListener('mousedown', e => {
+      cam.isDragging = true;
+      cam.lastMouseX = e.clientX;
+      cam.lastMouseY = e.clientY;
+    });
+    window.addEventListener('mouseup', () => cam.isDragging = false);
+    window.addEventListener('mousemove', e => {
+      if (!cam.isDragging) return;
+      const dx = e.clientX - cam.lastMouseX;
+      const dy = e.clientY - cam.lastMouseY;
+      cam.yaw += dx * 0.007;
+      cam.pitch = Math.max(-0.2, Math.min(1.45, cam.pitch - dy * 0.007));
+      cam.lastMouseX = e.clientX;
+      cam.lastMouseY = e.clientY;
+    });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      cam.dist = Math.max(2.2, Math.min(12.0, cam.dist + e.deltaY * 0.005));
+    }, { passive: false });
+
+    // --- Keyboard Control Listeners ---
+    const keys = {};
+    window.addEventListener('keydown', e => {
+      keys[e.key.toLowerCase()] = true;
+    });
+    window.addEventListener('keyup', e => {
+      keys[e.key.toLowerCase()] = false;
+    });
+
+    // --- Mode Switching ---
+    function setMode(mode) {
+      currentMode = mode;
+      document.getElementById('tab-manual').className = mode === 'manual' 
+        ? "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all bg-blue-600 text-white shadow"
+        : "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-300 hover:text-white";
+      document.getElementById('tab-pid').className = mode === 'pid'
+        ? "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all bg-blue-600 text-white shadow"
+        : "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-300 hover:text-white";
+
+      document.getElementById('panel-manual').style.display = mode === 'manual' ? 'flex' : 'none';
+      document.getElementById('panel-pid').style.display = mode === 'pid' ? 'flex' : 'none';
+      document.getElementById('overlay-mode-badge').innerText = mode === 'manual' ? 'Manual Attitude & Thrust Mode' : 'Single-Integrator PID Autopilot';
+      
+      if (mode === 'manual') missionWaypoints = [];
+    }
+
+    // --- Manual Slider Input Handlers ---
+    document.getElementById('slider-thrust').addEventListener('input', e => {
+      drone.cmdThrust = parseFloat(e.target.value);
+      updateThrustLabel();
+    });
+    document.getElementById('slider-pitch').addEventListener('input', e => {
+      drone.cmdPitch = parseFloat(e.target.value) * (Math.PI / 180.0);
+      document.getElementById('val-pitch').innerText = `${parseFloat(e.target.value).toFixed(1)}°`;
+    });
+    document.getElementById('slider-roll').addEventListener('input', e => {
+      drone.cmdRoll = parseFloat(e.target.value) * (Math.PI / 180.0);
+      document.getElementById('val-roll').innerText = `${parseFloat(e.target.value).toFixed(1)}°`;
+    });
+    document.getElementById('slider-yaw').addEventListener('input', e => {
+      drone.cmdYaw = parseFloat(e.target.value) * (Math.PI / 180.0);
+      document.getElementById('val-yaw').innerText = `${parseFloat(e.target.value).toFixed(1)}°`;
+    });
+
+    function updateThrustLabel() {
+      const pct = Math.round((drone.cmdThrust / HOVER_THRUST) * 100);
+      let text = `${drone.cmdThrust.toFixed(2)} N (${pct}%)`;
+      if (drone.cmdThrust < 0.2) text = "0.00 N (Zero Thrust / Drop)";
+      else if (Math.abs(drone.cmdThrust - HOVER_THRUST) < 0.08) text = "4.91 N (100% Hover)";
+      document.getElementById('val-thrust').innerText = text;
+    }
+
+    function setThrust(t) {
+      drone.cmdThrust = t;
+      document.getElementById('slider-thrust').value = t;
+      updateThrustLabel();
+    }
+
+    function setPitch(deg) {
+      drone.cmdPitch = deg * (Math.PI / 180.0);
+      document.getElementById('slider-pitch').value = deg;
+      document.getElementById('val-pitch').innerText = `${deg.toFixed(1)}°`;
+    }
+
+    function setRoll(deg) {
+      drone.cmdRoll = deg * (Math.PI / 180.0);
+      document.getElementById('slider-roll').value = deg;
+      document.getElementById('val-roll').innerText = `${deg.toFixed(1)}°`;
+    }
+
+    function setPreset(rollDeg, pitchDeg, thrust) {
+      setRoll(rollDeg);
+      setPitch(pitchDeg);
+      setThrust(thrust);
+    }
+
+    // --- PID Handlers ---
+    ['slider-kp', 'slider-ki', 'slider-kd'].forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        pid.kp = parseFloat(document.getElementById('slider-kp').value);
+        pid.ki = parseFloat(document.getElementById('slider-ki').value);
+        pid.kd = parseFloat(document.getElementById('slider-kd').value);
+        document.getElementById('val-kp').innerText = pid.kp.toFixed(1);
+        document.getElementById('val-ki').innerText = pid.ki.toFixed(2);
+        document.getElementById('val-kd').innerText = pid.kd.toFixed(1);
+      });
+    });
+
+    function resetPidGains() {
+      document.getElementById('slider-kp').value = 2.2;
+      document.getElementById('slider-ki').value = 0.4;
+      document.getElementById('slider-kd').value = 1.8;
+      pid.kp = 2.2; pid.ki = 0.4; pid.kd = 1.8;
+      document.getElementById('val-kp').innerText = "2.2";
+      document.getElementById('val-ki').innerText = "0.40";
+      document.getElementById('val-kd').innerText = "1.8";
+    }
+
+    function setTarget(t) {
+      target = [...t];
+      document.getElementById('tgt-x').value = target[0].toFixed(1);
+      document.getElementById('tgt-y').value = target[1].toFixed(1);
+      document.getElementById('tgt-z').value = target[2].toFixed(1);
+      document.getElementById('val-target').innerText = `[${target[0].toFixed(1)}, ${target[1].toFixed(1)}, ${target[2].toFixed(1)}]`;
+    }
+
+    function applyTargetInputs() {
+      const x = parseFloat(document.getElementById('tgt-x').value) || 0;
+      const y = parseFloat(document.getElementById('tgt-y').value) || 0;
+      const z = Math.max(0.3, parseFloat(document.getElementById('tgt-z').value) || 1.5);
+      setTarget([x, y, z]);
+    }
+
+    function startWaypointTour() {
+      setMode('pid');
+      missionWaypoints = [
+        [ 1.2,  1.2, 1.6],
+        [-1.2,  1.2, 1.8],
+        [-1.2, -1.2, 1.2],
+        [ 1.2, -1.2, 1.5],
+        [ 0.0,  0.0, 1.5]
+      ];
+      missionIndex = 0;
+      setTarget(missionWaypoints[0]);
+    }
+
+    function startStepResponse() {
+      setMode('pid');
+      missionWaypoints = [];
+      setTarget([1.5, 0.0, 2.0]);
+    }
+
+    function startCircleTrajectory() {
+      setMode('pid');
+      missionWaypoints = 'orbit';
+      orbitAngle = 0;
+    }
+
+    function resetSimulation() {
+      drone.pos = [0.0, 0.0, 1.5];
+      drone.vel = [0.0, 0.0, 0.0];
+      drone.roll = 0.0;
+      drone.pitch = 0.0;
+      drone.yaw = 0.0;
+      drone.cmdRoll = 0.0;
+      drone.cmdPitch = 0.0;
+      drone.cmdYaw = 0.0;
+      drone.cmdThrust = HOVER_THRUST;
+      drone.actualThrust = HOVER_THRUST;
+      pid.int_x = 0; pid.int_y = 0; pid.int_z = 0;
+      trail = [];
+      setRoll(0);
+      setPitch(0);
+      setThrust(HOVER_THRUST);
+      setTarget([0.0, 0.0, 1.5]);
+      missionWaypoints = [];
+    }
+
+    // --- Physics Simulation Engine ---
+    function updatePhysics() {
+      // 1. Process Keyboard Controls in Manual Mode (Smooth adjustment)
+      if (currentMode === 'manual') {
+        const ratePitch = 0.8 * (Math.PI / 180.0);
+        const rateRoll  = 0.8 * (Math.PI / 180.0);
+        const rateThrust = 0.12;
+
+        let changed = false;
+        if (keys['w']) { drone.cmdPitch = Math.min(0.61, drone.cmdPitch + ratePitch); changed = true; }
+        if (keys['s']) { drone.cmdPitch = Math.max(-0.61, drone.cmdPitch - ratePitch); changed = true; }
+        if (keys['a']) { drone.cmdRoll  = Math.max(-0.61, drone.cmdRoll - rateRoll); changed = true; }
+        if (keys['d']) { drone.cmdRoll  = Math.min(0.61, drone.cmdRoll + rateRoll); changed = true; }
+        if (keys['q']) { drone.cmdYaw   += 0.025; changed = true; }
+        if (keys['e']) { drone.cmdYaw   -= 0.025; changed = true; }
+        if (keys[' ']) { drone.cmdThrust = Math.min(9.81, drone.cmdThrust + rateThrust); changed = true; }
+        if (keys['shift']) { drone.cmdThrust = Math.max(0.0, drone.cmdThrust - rateThrust); changed = true; }
+
+        if (changed) {
+          document.getElementById('slider-pitch').value = (drone.cmdPitch * 180 / Math.PI).toFixed(0);
+          document.getElementById('slider-roll').value  = (drone.cmdRoll * 180 / Math.PI).toFixed(0);
+          document.getElementById('slider-yaw').value   = (drone.cmdYaw * 180 / Math.PI).toFixed(0);
+          document.getElementById('slider-thrust').value = drone.cmdThrust.toFixed(2);
+          document.getElementById('val-pitch').innerText = `${(drone.cmdPitch * 180 / Math.PI).toFixed(1)}°`;
+          document.getElementById('val-roll').innerText  = `${(drone.cmdRoll * 180 / Math.PI).toFixed(1)}°`;
+          document.getElementById('val-yaw').innerText   = `${(drone.cmdYaw * 180 / Math.PI).toFixed(1)}°`;
+          updateThrustLabel();
+        }
+      }
+
+      // 2. Single-Integrator PID Waypoint Controller
+      if (currentMode === 'pid') {
+        if (missionWaypoints === 'orbit') {
+          orbitAngle += 0.015;
+          const ox = 1.3 * Math.cos(orbitAngle);
+          const oy = 1.3 * Math.sin(orbitAngle);
+          const oz = 1.5 + 0.3 * Math.sin(2 * orbitAngle);
+          setTarget([ox, oy, oz]);
+        } else if (Array.isArray(missionWaypoints) && missionWaypoints.length > 0) {
+          const d = Math.hypot(drone.pos[0] - target[0], drone.pos[1] - target[1], drone.pos[2] - target[2]);
+          if (d < 0.22) {
+            missionTimer++;
+            if (missionTimer > 40) {
+              missionIndex = (missionIndex + 1) % missionWaypoints.length;
+              setTarget(missionWaypoints[missionIndex]);
+              missionTimer = 0;
+            }
+          }
+        }
+
+        // Position errors
+        const ex = target[0] - drone.pos[0];
+        const ey = target[1] - drone.pos[1];
+        const ez = target[2] - drone.pos[2];
+
+        // Conditional anti-windup integration
+        if (Math.hypot(ex, ey, ez) < 0.6) {
+          pid.int_x = Math.max(-0.4, Math.min(0.4, pid.int_x + ex * DT));
+          pid.int_y = Math.max(-0.4, Math.min(0.4, pid.int_y + ey * DT));
+          pid.int_z = Math.max(-0.4, Math.min(0.4, pid.int_z + ez * DT));
+        }
+
+        // Single-integrator velocity commands
+        const vx_cmd = pid.kp * ex + pid.ki * pid.int_x - pid.kd * drone.vel[0];
+        const vy_cmd = pid.kp * ey + pid.ki * pid.int_y - pid.kd * drone.vel[1];
+        const vz_cmd = (pid.kp * 1.4) * ez + (pid.ki * 1.4) * pid.int_z - (pid.kd * 1.4) * drone.vel[2];
+
+        // Heading rotation into body frame
+        const cy = Math.cos(drone.yaw), sy = Math.sin(drone.yaw);
+        const vx_body =  cy * vx_cmd + sy * vy_cmd;
+        const vy_body = -sy * vx_cmd + cy * vy_cmd;
+
+        // Kinematic mapping to pitch and roll commands
+        drone.cmdPitch = Math.max(-0.40, Math.min(0.40, vx_body / G));
+        drone.cmdRoll  = Math.max(-0.40, Math.min(0.40, -vy_body / G));
+        drone.cmdYaw   = 0.0;
+
+        // Tilt-compensated collective thrust
+        const tiltComp = Math.max(0.65, Math.cos(drone.roll) * Math.cos(drone.pitch));
+        drone.cmdThrust = Math.max(0.1 * HOVER_THRUST, Math.min(2.0 * HOVER_THRUST, (MASS * (G + vz_cmd)) / tiltComp));
+      }
+
+      // 3. Fast Attitude Tracking Dynamics (Lag filter simulating rate gyros)
+      const attitudeRate = 0.22;
+      drone.roll  += (drone.cmdRoll  - drone.roll)  * attitudeRate;
+      drone.pitch += (drone.cmdPitch - drone.pitch) * attitudeRate;
+      drone.yaw   += (drone.cmdYaw   - drone.yaw)   * attitudeRate;
+
+      // Motor thrust time constant
+      drone.actualThrust += (drone.cmdThrust - drone.actualThrust) * 0.4;
+
+      // 4. Translational Equations of Motion
+      const cr = Math.cos(drone.roll),  sr = Math.sin(drone.roll);
+      const cp = Math.cos(drone.pitch), sp = Math.sin(drone.pitch);
+      const cy = Math.cos(drone.yaw),   sy = Math.sin(drone.yaw);
+
+      // Exact 3D thrust vector: R_zyx * [0, 0, T]
+      const ax = (drone.actualThrust / MASS) * (sp * cr * cy + sr * sy) - DRAG * drone.vel[0];
+      const ay = (drone.actualThrust / MASS) * (sp * cr * sy - sr * cy) - DRAG * drone.vel[1];
+      const az = (drone.actualThrust / MASS) * (cp * cr) - G - DRAG * drone.vel[2];
+
+      // Euler Integration
+      drone.vel[0] += ax * DT;
+      drone.vel[1] += ay * DT;
+      drone.vel[2] += az * DT;
+
+      drone.pos[0] += drone.vel[0] * DT;
+      drone.pos[1] += drone.vel[1] * DT;
+      drone.pos[2] += drone.vel[2] * DT;
+
+      // Ground Collision Handling (Drop to floor)
+      if (drone.pos[2] <= GROUND_Z) {
+        drone.pos[2] = GROUND_Z;
+        if (!drone.onGround && Math.abs(drone.vel[2]) > 0.5) {
+          drone.contactAnimation = 1.0;
+        }
+        drone.vel[2] = 0.0;
+        drone.vel[0] *= 0.7;
+        drone.vel[1] *= 0.7;
+        drone.onGround = true;
+      } else {
+        drone.onGround = false;
+      }
+
+      if (drone.contactAnimation > 0) drone.contactAnimation -= 0.04;
+
+      // 5. Motor Allocation & Propeller Animation
+      const base = drone.actualThrust / 4.0;
+      const tau_x = (drone.cmdRoll - drone.roll) * 0.5;
+      const tau_y = (drone.cmdPitch - drone.pitch) * 0.5;
+      drone.rotorThrusts = [
+        Math.max(0, base + tau_x - tau_y),
+        Math.max(0, base + tau_x + tau_y),
+        Math.max(0, base - tau_x + tau_y),
+        Math.max(0, base - tau_x - tau_y)
+      ];
+      drone.rotorSpin += (drone.actualThrust / HOVER_THRUST) * 0.5 + 0.05;
+
+      // Breadcrumb Flight Trail
+      if (trail.length === 0 || Math.hypot(trail[trail.length-1][0]-drone.pos[0], trail[trail.length-1][1]-drone.pos[1], trail[trail.length-1][2]-drone.pos[2]) > 0.04) {
+        trail.push([...drone.pos]);
+        if (trail.length > 90) trail.shift();
+      }
+
+      // Update Telemetry Displays
+      const vxy = Math.hypot(drone.vel[0], drone.vel[1]);
+      document.getElementById('hud-z').innerText = drone.pos[2].toFixed(2);
+      document.getElementById('hud-vz').innerText = drone.vel[2].toFixed(2);
+      document.getElementById('hud-vxy').innerText = vxy.toFixed(2);
+      document.getElementById('hud-thrust').innerText = drone.actualThrust.toFixed(2);
+
+      const statusEl = document.getElementById('hud-status');
+      if (drone.onGround) {
+        statusEl.innerHTML = '<span class="text-amber-400">🟡 On Ground (Thrust &lt; Weight)</span>';
+      } else if (drone.vel[2] > 0.3) {
+        statusEl.innerHTML = '<span class="text-emerald-400">⬆️ Climbing</span>';
+      } else if (drone.vel[2] < -0.3) {
+        statusEl.innerHTML = '<span class="text-red-400">⬇️ Descending / Dropping</span>';
+      } else {
+        statusEl.innerHTML = '<span class="text-blue-400">🟢 Airborne (Stable Hover)</span>';
+      }
+
+      document.getElementById('val-t0').innerText = `${drone.rotorThrusts[0].toFixed(2)} N`;
+      document.getElementById('val-t1').innerText = `${drone.rotorThrusts[1].toFixed(2)} N`;
+      document.getElementById('val-t2').innerText = `${drone.rotorThrusts[2].toFixed(2)} N`;
+      document.getElementById('val-t3').innerText = `${drone.rotorThrusts[3].toFixed(2)} N`;
+    }
+
+    // --- Correct 3D Camera Projection Mathematics ---
+    // World Frame: X (forward), Y (right), Z (up)
+    function project3D(x, y, z, cx, cy) {
+      // Camera always targets the exact drone position for natural centering
+      const lookAt = [drone.pos[0], drone.pos[1], drone.pos[2]];
+
+      const dx = x - lookAt[0];
+      const dy = y - lookAt[1];
+      const dz = z - lookAt[2];
+
+      // 1. Rotate around World Z axis by camera yaw (azimuth)
+      const cyaw = Math.cos(cam.yaw), syaw = Math.sin(cam.yaw);
+      const rx =  cyaw * dx + syaw * dy; // Screen Horizontal (Right)
+      const ry = -syaw * dx + cyaw * dy; // Ground Depth (Forward into scene)
+      const rz = dz;                     // World Vertical (Up)
+
+      // 2. Rotate by camera pitch (elevation angle above horizon)
+      const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+      const cam_x = rx;
+      const cam_y = cp * rz - sp * ry;            // Screen Vertical (Up)
+      const cam_z = sp * rz + cp * ry + cam.dist; // Line-of-sight depth (into screen)
+
+      const fov = 480.0;
+      const safeDepth = Math.max(0.15, cam_z);
+
+      return {
+        x: cx + (cam_x * fov) / safeDepth,
+        y: cy - (cam_y * fov) / safeDepth, // subtract because canvas Y increases downwards
+        depth: safeDepth
+      };
+    }
+
+    // --- Transform Body Coordinate to World Coordinates ---
+    function bodyPointToWorld(bx, by, bz) {
+      const cr = Math.cos(drone.roll),  sr = Math.sin(drone.roll);
+      const cp = Math.cos(drone.pitch), sp = Math.sin(drone.pitch);
+      const cy = Math.cos(drone.yaw),   sy = Math.sin(drone.yaw);
+
+      // Rotation matrix R_zyx
+      const wx = (cp*cy)*bx + (sr*sp*cy - cr*sy)*by + (cr*sp*cy + sr*sy)*bz + drone.pos[0];
+      const wy = (cp*sy)*bx + (sr*sp*sy + cr*cy)*by + (cr*sp*sy - sr*cy)*bz + drone.pos[1];
+      const wz = (-sp)*bx   + (sr*cp)*by            + (cr*cp)*bz            + drone.pos[2];
+      return [wx, wy, wz];
+    }
+
+    // --- Draw PFD Artificial Horizon ---
+    function renderPFD() {
+      pfdCtx.clearRect(0, 0, 130, 130);
+      const pcx = 65, pcy = 65, r = 58;
+
+      pfdCtx.save();
+      pfdCtx.beginPath();
+      pfdCtx.arc(pcx, pcy, r, 0, Math.PI * 2);
+      pfdCtx.clip();
+
+      // Rotate horizon by roll angle
+      pfdCtx.translate(pcx, pcy);
+      pfdCtx.rotate(drone.roll);
+
+      // Pitch shift
+      const pitchPixels = (drone.pitch * 180 / Math.PI) * 1.5;
+
+      // Sky (Blue)
+      pfdCtx.fillStyle = '#0284c7';
+      pfdCtx.fillRect(-r * 2, -r * 2 + pitchPixels, r * 4, r * 2);
+
+      // Ground (Brown)
+      pfdCtx.fillStyle = '#78350f';
+      pfdCtx.fillRect(-r * 2, pitchPixels, r * 4, r * 2);
+
+      // Horizon Line (White)
+      pfdCtx.strokeStyle = '#ffffff';
+      pfdCtx.lineWidth = 2;
+      pfdCtx.beginPath();
+      pfdCtx.moveTo(-r, pitchPixels);
+      pfdCtx.lineTo(r, pitchPixels);
+      pfdCtx.stroke();
+
+      // Pitch Ladder Lines (±10°, ±20°)
+      [-20, -10, 10, 20].forEach(deg => {
+        const y = pitchPixels - deg * 1.5;
+        pfdCtx.lineWidth = 1;
+        pfdCtx.beginPath();
+        pfdCtx.moveTo(-12, y);
+        pfdCtx.lineTo(12, y);
+        pfdCtx.stroke();
+      });
+
+      pfdCtx.restore();
+
+      // Aircraft Center Reticle (Fixed Amber)
+      pfdCtx.strokeStyle = '#f59e0b';
+      pfdCtx.lineWidth = 2.5;
+      pfdCtx.beginPath();
+      pfdCtx.moveTo(pcx - 22, pcy);
+      pfdCtx.lineTo(pcx - 8, pcy);
+      pfdCtx.lineTo(pcx, pcy + 6);
+      pfdCtx.lineTo(pcx + 8, pcy);
+      pfdCtx.lineTo(pcx + 22, pcy);
+      pfdCtx.stroke();
+
+      // Numeric readout
+      document.getElementById('pfd-pitch').innerText = `${(drone.pitch * 180 / Math.PI).toFixed(1)}°`;
+      document.getElementById('pfd-roll').innerText = `${(drone.roll * 180 / Math.PI).toFixed(1)}°`;
+    }
+
+    // --- Main 3D Rendering Pipeline ---
+    function renderScene() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cx = canvas.width / 2.0;
+      const cy = canvas.height / 2.0;
+
+      // 1. Draw 3D Ground Grid (with Elevation Reference)
+      const gridSize = 4.0;
+      const gridStep = 0.5;
+
+      for (let g = -gridSize; g <= gridSize; g += gridStep) {
+        const p1 = project3D(g, -gridSize, 0, cx, cy);
+        const p2 = project3D(g,  gridSize, 0, cx, cy);
+        ctx.strokeStyle = (Math.abs(g) < 0.01) ? '#ef4444' : '#1e293b';
+        ctx.lineWidth = (Math.abs(g) < 0.01) ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+
+        const q1 = project3D(-gridSize, g, 0, cx, cy);
+        const q2 = project3D( gridSize, g, 0, cx, cy);
+        ctx.strokeStyle = (Math.abs(g) < 0.01) ? '#10b981' : '#1e293b';
+        ctx.lineWidth = (Math.abs(g) < 0.01) ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(q1.x, q1.y);
+        ctx.lineTo(q2.x, q2.y);
+        ctx.stroke();
+      }
+
+      // 2. Draw Target Waypoint (Golden Pulsing 3D Sphere)
+      if (currentMode === 'pid') {
+        const tp = project3D(target[0], target[1], target[2], cx, cy);
+        const tg = project3D(target[0], target[1], 0, cx, cy);
+
+        // Waypoint vertical drop-line
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(tp.x, tp.y);
+        ctx.lineTo(tg.x, tg.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Ground target ring
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.6)';
+        ctx.beginPath();
+        ctx.ellipse(tg.x, tg.y, 160 / tg.depth, 70 / tg.depth, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Glowing sphere
+        const pulse = 1.0 + 0.12 * Math.sin(Date.now() * 0.006);
+        const tgtR = (75 / tp.depth) * pulse;
+        const gradTgt = ctx.createRadialGradient(tp.x - tgtR*0.3, tp.y - tgtR*0.3, 1, tp.x, tp.y, tgtR);
+        gradTgt.addColorStop(0, '#fef08a');
+        gradTgt.addColorStop(0.6, '#f59e0b');
+        gradTgt.addColorStop(1, '#b45309');
+        ctx.fillStyle = gradTgt;
+        ctx.beginPath();
+        ctx.arc(tp.x, tp.y, tgtR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 3. Draw Flight Trail
+      if (trail.length > 1) {
+        ctx.lineWidth = 2.5;
+        for (let i = 0; i < trail.length - 1; i++) {
+          const pt1 = project3D(trail[i][0], trail[i][1], trail[i][2], cx, cy);
+          const pt2 = project3D(trail[i+1][0], trail[i+1][1], trail[i+1][2], cx, cy);
+          const alpha = (i / trail.length) * 0.8;
+          ctx.strokeStyle = `rgba(59, 130, 246, ${alpha})`;
+          ctx.beginPath();
+          ctx.moveTo(pt1.x, pt1.y);
+          ctx.lineTo(pt2.x, pt2.y);
+          ctx.stroke();
+        }
+      }
+
+      // 4. Draw Drone Ground Shadow & Altitude Drop-Line
+      const shadowProj = project3D(drone.pos[0], drone.pos[1], 0, cx, cy);
+      const droneCenterProj = project3D(drone.pos[0], drone.pos[1], drone.pos[2], cx, cy);
+
+      // Vertical altitude ruler line
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(droneCenterProj.x, droneCenterProj.y);
+      ctx.lineTo(shadowProj.x, shadowProj.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Altitude label on drop-line
+      if (drone.pos[2] > 0.25) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px monospace';
+        ctx.fillText(`h = ${drone.pos[2].toFixed(2)}m`, shadowProj.x + 8, (shadowProj.y + droneCenterProj.y) / 2);
+      }
+
+      // Ground Shadow Ellipse
+      const shadowSize = Math.max(0.25, 1.1 - drone.pos[2] * 0.2);
+      const sRadius = (160 / shadowProj.depth) * shadowSize;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.beginPath();
+      ctx.ellipse(shadowProj.x, shadowProj.y, sRadius, sRadius * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Landing Contact Dust Effect
+      if (drone.contactAnimation > 0) {
+        const ringR = sRadius * (1.2 + (1.0 - drone.contactAnimation) * 1.5);
+        ctx.strokeStyle = `rgba(245, 158, 11, ${drone.contactAnimation * 0.8})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(shadowProj.x, shadowProj.y, ringR, ringR * 0.45, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // 5. Draw 3D Oriented Quadrotor Frame & Rotors
+      const armLen = 0.28;
+      const rotorRadius3D = 0.11;
+
+      // X-Configuration in body frame:
+      // Front is +X, Right is +Y
+      const rotors = [
+        { name: 'M0', pos: [ armLen,  armLen, 0.0], color: '#ef4444', thrust: drone.rotorThrusts[0] }, // Front-Right (Red)
+        { name: 'M1', pos: [-armLen,  armLen, 0.0], color: '#3b82f6', thrust: drone.rotorThrusts[1] }, // Rear-Right (Blue)
+        { name: 'M2', pos: [-armLen, -armLen, 0.0], color: '#3b82f6', thrust: drone.rotorThrusts[2] }, // Rear-Left (Blue)
+        { name: 'M3', pos: [ armLen, -armLen, 0.0], color: '#ef4444', thrust: drone.rotorThrusts[3] }  // Front-Left (Red)
+      ];
+
+      // Body Center in Screen
+      const centerWorld = bodyPointToWorld(0, 0, 0);
+      const center2D = project3D(centerWorld[0], centerWorld[1], centerWorld[2], cx, cy);
+
+      // Draw Carbon Fiber X-Arms with thickness
+      rotors.forEach(r => {
+        const wPos = bodyPointToWorld(r.pos[0], r.pos[1], r.pos[2]);
+        const r2D = project3D(wPos[0], wPos[1], wPos[2], cx, cy);
+
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = Math.max(3, 24 / center2D.depth);
+        ctx.beginPath();
+        ctx.moveTo(center2D.x, center2D.y);
+        ctx.lineTo(r2D.x, r2D.y);
+        ctx.stroke();
+      });
+
+      // Draw Prominent Collective Thrust Vector Arrow (Emerging from body center in +Z body direction)
+      const thrustArrowScale = (drone.actualThrust / HOVER_THRUST) * 0.45;
+      if (thrustArrowScale > 0.05) {
+        const thrustTopWorld = bodyPointToWorld(0, 0, thrustArrowScale);
+        const thrustTop2D = project3D(thrustTopWorld[0], thrustTopWorld[1], thrustTopWorld[2], cx, cy);
+
+        // Glowing cyan thrust vector
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = Math.max(3, 14 / center2D.depth);
+        ctx.beginPath();
+        ctx.moveTo(center2D.x, center2D.y);
+        ctx.lineTo(thrustTop2D.x, thrustTop2D.y);
+        ctx.stroke();
+
+        // Arrowhead
+        ctx.fillStyle = '#0284c7';
+        ctx.beginPath();
+        ctx.arc(thrustTop2D.x, thrustTop2D.y, Math.max(3, 10 / center2D.depth), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Draw 4 Motors & True 3D Oriented Rotor Discs
+      rotors.forEach(r => {
+        const motorWorld = bodyPointToWorld(r.pos[0], r.pos[1], r.pos[2]);
+        const motor2D = project3D(motorWorld[0], motorWorld[1], motorWorld[2], cx, cy);
+
+        // Transform 16 points around the rotor disc in the 3D body plane to render TRUE 3D tilt
+        ctx.beginPath();
+        const numDiscPts = 16;
+        for (let i = 0; i <= numDiscPts; i++) {
+          const theta = (i / numDiscPts) * Math.PI * 2;
+          const discBodyX = r.pos[0] + rotorRadius3D * Math.cos(theta);
+          const discBodyY = r.pos[1] + rotorRadius3D * Math.sin(theta);
+          const discBodyZ = r.pos[2];
+
+          const ptW = bodyPointToWorld(discBodyX, discBodyY, discBodyZ);
+          const pt2D = project3D(ptW[0], ptW[1], ptW[2], cx, cy);
+
+          if (i === 0) ctx.moveTo(pt2D.x, pt2D.y);
+          else ctx.lineTo(pt2D.x, pt2D.y);
+        }
+        ctx.closePath();
+
+        // Blended rotor disc fill & outline
+        ctx.fillStyle = r.color + '33';
+        ctx.fill();
+        ctx.strokeStyle = r.color;
+        ctx.lineWidth = 2.0;
+        ctx.stroke();
+
+        // Spinning Propeller Blade
+        const b1W = bodyPointToWorld(
+          r.pos[0] + rotorRadius3D * Math.cos(drone.rotorSpin),
+          r.pos[1] + rotorRadius3D * Math.sin(drone.rotorSpin),
+          r.pos[2]
+        );
+        const b2W = bodyPointToWorld(
+          r.pos[0] - rotorRadius3D * Math.cos(drone.rotorSpin),
+          r.pos[1] - rotorRadius3D * Math.sin(drone.rotorSpin),
+          r.pos[2]
+        );
+        const b1_2D = project3D(b1W[0], b1W[1], b1W[2], cx, cy);
+        const b2_2D = project3D(b2W[0], b2W[1], b2W[2], cx, cy);
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(b1_2D.x, b1_2D.y);
+        ctx.lineTo(b2_2D.x, b2_2D.y);
+        ctx.stroke();
+
+        // Motor Hub
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(motor2D.x, motor2D.y, Math.max(3, 8 / motor2D.depth), 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 6. Central Fuselage with Directional Nose Cone
+      const bodyR = Math.max(8, 36 / center2D.depth);
+      const gradBody = ctx.createRadialGradient(center2D.x - bodyR*0.3, center2D.y - bodyR*0.3, 1, center2D.x, center2D.y, bodyR);
+      gradBody.addColorStop(0, '#94a3b8');
+      gradBody.addColorStop(0.7, '#1e293b');
+      gradBody.addColorStop(1, '#020617');
+      ctx.fillStyle = gradBody;
+      ctx.beginPath();
+      ctx.arc(center2D.x, center2D.y, bodyR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Forward Heading Nose Cone (+X body)
+      const noseWorld = bodyPointToWorld(0.22, 0, 0);
+      const nose2D = project3D(noseWorld[0], noseWorld[1], noseWorld[2], cx, cy);
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = Math.max(3, 12 / center2D.depth);
+      ctx.beginPath();
+      ctx.moveTo(center2D.x, center2D.y);
+      ctx.lineTo(nose2D.x, nose2D.y);
+      ctx.stroke();
+    }
+
+    // --- Main Game Loop ---
+    function loop() {
+      updatePhysics();
+      renderScene();
+      renderPFD();
+      requestAnimationFrame(loop);
+    }
+
+    // Initialize UI and start animation
+    updateThrustLabel();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

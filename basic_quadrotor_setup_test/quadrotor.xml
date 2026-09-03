@@ -1,0 +1,85 @@
+<mujoco model="quadrotor">
+  <compiler angle="radian" coordinate="local"/>
+  
+  <option gravity="0 0 -9.81" integrator="RK4" timestep="0.01"/>
+
+  <visual>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20" offwidth="1280" offheight="720"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0.0 0.1 0.2" width="512" height="512"/>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1="0.25 0.35 0.45" rgb2="0.15 0.2 0.25"/>
+    <material name="grid" texture="grid" texrepeat="2 2" texuniform="true" reflectance="0.2"/>
+    <material name="chassis" rgba="0.15 0.15 0.15 1.0" specular="0.5" shininess="0.5"/>
+    <material name="arm" rgba="0.25 0.25 0.25 1.0"/>
+    <material name="front_prop" rgba="0.95 0.15 0.15 0.85" specular="0.4"/>
+    <material name="rear_prop" rgba="0.15 0.45 0.95 0.85" specular="0.4"/>
+    <material name="target_mat" rgba="1.0 0.8 0.0 0.75" specular="0.9"/>
+  </asset>
+
+  <worldbody>
+    <!-- Lighting -->
+    <light directional="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" pos="0 0 6.0" dir="0 0 -1"/>
+    <light directional="true" diffuse="0.4 0.4 0.4" specular="0.1 0.1 0.1" pos="4 -4 5.0" dir="-1 1 -1"/>
+
+    <!-- Floor Plane -->
+    <geom name="floor" type="plane" size="12 12 0.1" material="grid" condim="3"/>
+
+    <!-- Target Goal Waypoint (Mocap Body with zero mass so it does not affect physics) -->
+    <body name="target" pos="0.0 0.0 1.0" mocap="true">
+      <geom name="target_sphere" type="sphere" size="0.08" material="target_mat" contype="0" conaffinity="0" density="0"/>
+    </body>
+
+    <!-- Fixed Observer Wide Arena Cameras (Ensures drone is NEVER out of frame) -->
+    <camera name="arena_cam" pos="3.8 -3.8 3.0" xyaxes="0.707 0.707 0 -0.408 0.408 0.816" fovy="60"/>
+    <camera name="side_cam" pos="0.0 -4.5 2.2" xyaxes="1 0 0 0 0.38 0.92" fovy="60"/>
+    <camera name="top_cam" pos="0.0 0.0 6.0" xyaxes="1 0 0 0 1 0" fovy="60"/>
+
+    <!-- 6-DOF Quadrotor Body -->
+    <body name="quadrotor" pos="0 0 0.2">
+      <freejoint name="root"/>
+      <inertial pos="0 0 0" mass="0.500" diaginertia="0.0025 0.0025 0.0045"/>
+      
+      <!-- Tracking Camera (Follows the drone smoothly with wide FOV) -->
+      <camera name="track_cam" mode="trackcom" pos="0.0 -3.2 1.6" xyaxes="1 0 0 0 0.45 0.89" fovy="60"/>
+
+      <!-- Central Body / Fuselage -->
+      <geom name="chassis_geom" type="sphere" size="0.06" material="chassis" density="0"/>
+
+      <!-- Arms in X-Configuration (L = 0.17m) -->
+      <geom name="arm1" type="capsule" fromto="0.12 0.12 0 -0.12 -0.12 0" size="0.008" material="arm" density="0"/>
+      <geom name="arm2" type="capsule" fromto="-0.12 0.12 0 0.12 -0.12 0" size="0.008" material="arm" density="0"/>
+
+      <!-- Rotor 0: Front-Right (+x, +y) -->
+      <geom name="motor0" type="cylinder" pos="0.12 0.12 0.015" size="0.015 0.01" material="chassis" density="0"/>
+      <geom name="prop0" type="cylinder" pos="0.12 0.12 0.025" size="0.06 0.002" material="front_prop" contype="0" conaffinity="0" density="0"/>
+      <site name="thruster0" pos="0.12 0.12 0.025"/>
+
+      <!-- Rotor 1: Rear-Right (-x, +y) -->
+      <geom name="motor1" type="cylinder" pos="-0.12 0.12 0.015" size="0.015 0.01" material="chassis" density="0"/>
+      <geom name="prop1" type="cylinder" pos="-0.12 0.12 0.025" size="0.06 0.002" material="rear_prop" contype="0" conaffinity="0" density="0"/>
+      <site name="thruster1" pos="-0.12 0.12 0.025"/>
+
+      <!-- Rotor 2: Rear-Left (-x, -y) -->
+      <geom name="motor2" type="cylinder" pos="-0.12 -0.12 0.015" size="0.015 0.01" material="chassis" density="0"/>
+      <geom name="prop2" type="cylinder" pos="-0.12 -0.12 0.025" size="0.06 0.002" material="rear_prop" contype="0" conaffinity="0" density="0"/>
+      <site name="thruster2" pos="-0.12 -0.12 0.025"/>
+
+      <!-- Rotor 3: Front-Left (+x, -y) -->
+      <geom name="motor3" type="cylinder" pos="0.12 -0.12 0.015" size="0.015 0.01" material="chassis" density="0"/>
+      <geom name="prop3" type="cylinder" pos="0.12 -0.12 0.025" size="0.06 0.002" material="front_prop" contype="0" conaffinity="0" density="0"/>
+      <site name="thruster3" pos="0.12 -0.12 0.025"/>
+    </body>
+  </worldbody>
+
+  <!-- Actuators: 4 Site Thrusters -->
+  <actuator>
+    <general name="thrust0" site="thruster0" gear="0 0 1 0 0  0.015" ctrlrange="0 3.0" ctrllimited="true"/>
+    <general name="thrust1" site="thruster1" gear="0 0 1 0 0 -0.015" ctrlrange="0 3.0" ctrllimited="true"/>
+    <general name="thrust2" site="thruster2" gear="0 0 1 0 0  0.015" ctrlrange="0 3.0" ctrllimited="true"/>
+    <general name="thrust3" site="thruster3" gear="0 0 1 0 0 -0.015" ctrlrange="0 3.0" ctrllimited="true"/>
+  </actuator>
+</mujoco>
