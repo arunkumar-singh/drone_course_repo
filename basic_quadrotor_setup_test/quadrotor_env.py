@@ -3,10 +3,26 @@
 """
 
 import os
+
+# Set headless OpenGL backend (EGL) for cloud/headless environments
+if "MUJOCO_GL" not in os.environ:
+    os.environ["MUJOCO_GL"] = "egl"
+
 import gymnasium as gym
 from gymnasium import spaces
 import mujoco
 import numpy as np
+
+# Ensure EGL / OSMesa context is bound if available
+try:
+    import mujoco.egl
+    mujoco.GLContext = mujoco.egl.GLContext
+except Exception:
+    try:
+        import mujoco.osmesa
+        mujoco.GLContext = mujoco.osmesa.GLContext
+    except Exception:
+        pass
 
 
 class QuadrotorEnv(gym.Env):
