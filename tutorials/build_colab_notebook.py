@@ -75,8 +75,8 @@ notebook = {
                 "import os\n",
                 "os.environ[\"MUJOCO_GL\"] = \"egl\"\n",
                 "\n",
-                "# 2. Install required packages\n",
-                "!pip install -q gymnasium mujoco mediapy\n",
+                "# 2. Install required packages (including mujoco-mjx for GPU simulation)\n",
+                "!pip install -q gymnasium mujoco mujoco-mjx mediapy\n",
                 "\n",
                 "# 3. Ensure EGL GLContext is bound to MuJoCo even in an already-active runtime\n",
                 "import mujoco\n",
@@ -93,7 +93,12 @@ notebook = {
                 "\n",
                 "print(f\"MuJoCo Version: {mujoco.__version__}\")\n",
                 "print(f\"Active OpenGL Platform: {getattr(mujoco, 'GLContext', 'Default')}\")\n",
-                "print(f\"Gymnasium Version: {gym.__version__}\")"
+                "print(f\"Gymnasium Version: {gym.__version__}\")\n",
+                "try:\n",
+                "    import mujoco.mjx as mjx\n",
+                "    print(\"MuJoCo MJX: Available\")\n",
+                "except Exception:\n",
+                "    print(\"MuJoCo MJX: Not yet loaded\")"
             ]
         },
         {
@@ -693,7 +698,15 @@ notebook = {
             "execution_count": None,
             "outputs": [],
             "source": [
-                "from mujoco import mjx\n",
+                "# 0. Ensure mujoco-mjx is installed and importable\n",
+                "try:\n",
+                "    from mujoco import mjx\n",
+                "except (ImportError, ModuleNotFoundError):\n",
+                "    import sys, subprocess\n",
+                "    print(\"Installing mujoco-mjx for GPU acceleration...\")\n",
+                "    subprocess.check_call([sys.executable, \"-m\", \"pip\", \"install\", \"-q\", \"mujoco-mjx\"])\n",
+                "    from mujoco import mjx\n",
+                "\n",
                 "import jax\n",
                 "import jax.numpy as jnp\n",
                 "\n",
