@@ -763,6 +763,13 @@ notebook = {
 out_path = "/home/aks1/drone_course_repo/tutorials/quadrotor_gym_mujoco_colab.ipynb"
 with open(out_path, "w", encoding="utf-8") as f:
     json.dump(notebook, f, indent=2)
+if __name__ == "__main__":
+    out_path = "/home/aks1/drone_course_repo/tutorials/quadrotor_gym_mujoco_colab.ipynb"
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(notebook, f, indent=2)
 
 print(f"Successfully generated updated Colab tutorial at: {out_path}")
 print(f"File size: {os.path.getsize(out_path)/1024:.1f} KB")
+    print(f"Successfully generated updated Colab tutorial at: {out_path}")
+    print(f"File size: {os.path.getsize(out_path)/1024:.1f} KB")
+
