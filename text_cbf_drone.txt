@@ -1,0 +1,831 @@
+Comparative Analysis of Control Barrier Functions and
+Artificial Potential Fields for Obstacle Avoidance
+
+arXiv:2010.09819v1 [cs.RO] 19 Oct 2020
+
+Andrew Singletary1 , Karl Klingebiel2 , Joseph Bourne2 , Andrew Browning2 , Phil Tokumaru2 , and Aaron Ames1
+
+Abstract—Artificial potential fields (APFs) and their variants
+have been a staple for collision avoidance of mobile robots and
+manipulators for almost 40 years. Its model-independent nature,
+ease of implementation, and real-time performance have played
+a large role in its continued success over the years. Control
+barrier functions (CBFs), on the other hand, are a more recent
+development, commonly used to guarantee safety for nonlinear
+systems in real-time in the form of a filter on a nominal controller.
+In this paper, we address the connections between APFs and
+CBFs. At a theoretic level, we prove that APFs are a special case
+of CBFs: given a APF one obtains a CBFs, while the converse
+is not true. Additionally, we prove that CBFs obtained from
+APFs have additional beneficial properties and can be applied to
+nonlinear systems. Practically, we compare the performance of
+APFs and CBFs in the context of obstacle avoidance on simple
+illustrative examples and for a quadrotor, both in simulation
+and on hardware using onboard sensing. These comparisons
+demonstrate that CBFs outperform APFs.
+
+I. I NTRODUCTION
+As mobile robots become increasingly popular in society,
+many hobbyists and companies are tasked with the challenge
+of keeping their robots from colliding with people, objects,
+and other robots. A real-time obstacle avoidance framework
+is necessary for ensuring that the operator is able to safely
+utilize the product. The goal of such a framework is to provide
+safety, but minimally alters the behavior of the robot when it
+is far away from any potential collisions. While many options
+exist for this task, few are as simple, easy to implement, and
+well-established as potential fields.
+Artificial Potential Fields (APFs) have been utilized for over
+thirty years in the context of real-time obstacle avoidance.
+They were first in the seminal paper by Khatib [1], and has
+since been developed further, beginning with computational
+methods [2]. Of particular importance to this work, there
+has also been significant work in applying APFs to obstacle
+avoidance [3], [4], including dynamic obstacles [5]. Work has
+also been been done on improving the behavior of artificial
+potential fields, particularly in dealing with undesirable oscillation behavior [6]. Finally, the search for effective methods
+for path planning using APFs has continued [7], including
+application to UAV path planning [8].
+Control barrier functions (CBFs) were introduced recently
+[9], [10], and serve as a method for providing safety guarantees
+of nonlinear systems via optimization-based controllers. They
+are commonly used in the safety-critical controls community
+due to their robustness [11] and real-time performance capabilities, even for dynamic robots [12], [13]. They have, therefore,
+1 Mechanical and Civil Engineering, Caltech, Pasadena, CA, USA, 91125.
+
+{ames,asinglet}@caltech.edu
+2 Aerovironment, Simi Valley, CA, USA, 93065.
+
+{klingebiel,bourne,browning,tokumaru}@avinc.com
+
+Fig. 1: Quadrotor given a waypoint on the other side of wall,
+and stopping before colliding using control barrier functions.
+
+found application in a variety of domains: automotive safety
+[14], robotics [15], [16], multi-agent systems [17], [18] and
+quadrotors [19]. See [20] for a recent survey.
+Given the historic use of artificial potential fields, and
+the recent popularity of control barrier functions, the natural
+question to ask is: How do control barrier functions compare
+to artificial potential fields?
+The major contribution of this work is a comparative
+analysis of CBFs and APFs—both theoretically and through
+simulation and experimental results on obstacle avoidance.
+At a formal level, we establish that APFs can be used to
+synthesize a specific instance of a CBF, thereby showing that
+CBFs are more general than APFs. Additionally, this translation results in beneficial properties: it (pointwise) optimally
+balances avoidance and goal attainment, is well defined if the
+system leaves the safe set, and allows one to generalize APFs
+to nonlinear control systems. From a comparative perspective,
+we begin with simple examples to illustrate the beneficial
+properties of CBFs vs. APFs, followed by high-fidelity simulations of a quadrotor for different obstacle avoidance scenarios.
+Finally, these same scenarios are carried out experimentally
+on a quadrotor with onboard sensing. We conclude from these
+comparisons that CBFs outperform APFs in the context of
+providing smooth behaviors that are minimally invasive while
+guaranteeing obstacle avoidance.
+The layout of the paper is as follows. Section II provides
+an overview of the APF and CBF methods, and illustrates
+their differences via an example of obstacle avoidance with
+single integrator dynamics. Section III further details control
+barrier functions, and presents the main theoretic results of
+the paper including the fact that APFs are a special case of
+CBFs. Section IV presents simulation results with velocitybased controllers obtained from CBFs and APFs, which are
+compared in a series of scenarios. Finally, Section V showcases the hardware results realizing APFs and CBFs on a
+quadrotor utilizing only onboard sensing and computation.
+
+II. BACKGROUND & M OTIVATION
+In this section, we give a brief background on artificial
+potential fields and control barrier functions, and illustrate
+their similarities and differences via an example associated
+with obstacle avoidance for a single integrator in the plane.
+This comparison will be formalized in the next section, where
+more general forms of potential fields and control barrier
+functions will be considered. Importantly, as the motivation
+in this section suggestions, we will see that control barrier
+functions are a generalization of potential fields.
+A. Artificial Potential Fields
+We begin by considering artificial potential fields (APFs)
+in the setting of obstacle avoidance. A variety of potential
+functions can be utilized, but this section will look at the
+original formulation [1]. In this context, consider a control
+system described by a single integrator:
+ẋ = v,
+
+(1)
+
+with x ∈ Rn is the position, and v ∈ Rn is the velocity.
+Here v is viewed to be the control input to the system. The
+goal is to synthesize a desired velocity profile that reaches
+a goal position while avoiding one or multiple obstacles.
+The motivation for considering a single integrator is that the
+resulting behavior of this system can, for example, be utilized
+as desired velocity profiles for end-effector positions for a
+robot manipulator (n = 3) wherein classic Jacobian methods
+can be utilized [3].
+To explicitly present artificial potential fields, per the original formulation in [1], let xgoal the goal position. This exerts
+an attractive potential to the system given by:
+1
+2
+Katt kx − xgoal k .
+(2)
+2
+Any obstacles in the area assert a repulsive potential, given by
+
+0
+ρ(x) > ρ0
+2
+
+Urep (x) = 1
+(3)
+1
+1
+ Krep
+ρ(x) ≤ ρ0
+2
+ρ(x) − ρ0
+Uatt (x) =
+
+where ρ(x) is the distance to the obstacle or the distance from
+a safe region around the obstacle, e.g.:
+ρ(x) = kx − xobs k − Dobs ,
+
+(4)
+
+for Dobs > 0, and ρ0 is the region of influence. The potential
+function is set to zero outside of this region to allow the
+attractive potential to dominate over large distances.
+To obtain a feedback controller that pushes the system to
+the goal while avoiding obstacles, the attractive and repulsive
+potentials are combined and the gradient is taken:
+FAPF (x) = −∇Uatt (x) − ∇Urep (x).
+
+(5)
+
+ẋ = FAPF (x)
+yielding a gradient dynamical system with respect to the
+attractive and repulsive potentials.
+Example 1. Consider a mobile robot modeled as a single
+integrator travelling in the plane: n = 2. The initial position
+is x0 = (0, 0), and the goal position is xgoal = (3, 5). There
+are two obstacles, at xO1 = (1, 2) and xO2 = (2.5, 3), that
+the mobile robot must not come within 0.5 meters of these
+obstacles.
+The new distance function for obstacle i is ρ = kx − xOi k−
+0.5. Using Katt = Krep = 1, with varying values of ρ0 , we
+have the result shown in Figure 2(a). As can be seen in this
+figure, the potential field works well at ρ0 values of 1 and
+0.25, but it gets stuck in a local minimum at ρ0 = 0.5,
+and oscillations start to occur at ρ0 = 0.1. Potential fields,
+therefore, work well when properly tuned, but can suffer from
+oscillations—due to the interaction between the attractive and
+repulsive forces—when not tuned properly.
+B. Motivating Control Barrier Functions
+To motivate control barrier functions, we again consider
+the the single integrator in (1). For this system, we wish to
+formulate safety-critical controller synthesis. In this context,
+consider a safety function h : Rn → R defining a safe set:
+S = {x ∈ Rn : h(x) ≥ 0}.
+That is, the system is “safe” when the function h is positive.
+One can view this set as the complement of the obstacles. That
+is, one can utilize ρ and define:
+h(x) = ρ(x) = kx − xobs k − Dobs ≥ 0
+where now the safe set S is the set we wished to render safe
+with the potential fields.
+It is not possible to directly ensure safety of the system
+by simply checking on the positivity of h. Therefore, we
+can instead consider a derivative condition on h that can be
+checked instantaneously—this is analogous to potential fields
+wherein one looks at the gradient of the potential functions.
+This lead to the recent introduction of control barrier functions
+[9], [10] (see [20] for a more detailed history). The function
+h is a control barrier function if for all x (in the domain of
+interest) there exists a v such that:
+ḣ(x, v) = ∇h(x)T ẋ = ∇h(x)T v ≥ −αh(x)
+
+(6)
+(7)
+
+(8)
+
+for α > 0. In this case, given an input v(x) that satisfies this
+inequality, consider the closed loop system ẋ = v(x) with
+solution x(t) and initial condition x(0) = x0 wherein, because
+v(x) satisfies (8) the set S is forward invariant, i.e., safe:
+x(0) = x0 ∈ S
+
+−
+T
+with ∇U− (x) = ∂U
+∂x (x) and:
+
+∇Uatt (x) = Katt (x − xgoal )
+
+
+Krep
+1
+1 (x − xgoal )
+∇Urep (x) =
+−
+.
+ρ(x)2 ρ(x) ρ0
+ρ(x)
+
+For a single integrator (1), where one directly controls velocity,
+we simply apply this force as the velocity input:
+
+⇒
+
+x(t) ∈ S
+
+∀ t ≥ 0.
+
+(9)
+
+Thus, the existence of a control barrier function implies safety.
+For example, one could verify that the potential field controller
+yields safe behavior by verifying that, for h(x) = ρ(x),
+ḣ(x, FAPF (x)) ≥ −αh(x).
+
+(a) Artificial Potential Field
+
+(b) Control Barrier Function
+
+(c) APF-based CBF
+
+Fig. 2: Comparison of potential fields and control barrier functions at various values of ρ0 and α
+Control barrier functions can be used to synthesize controllers that ensure safety, as defined in (9), even given a
+desired velocity: vdes (x, t). Specifically, the input v ∈ Rn
+can be explicitly found that satisfies the inequality in (8)
+if ∇h(x) 6= 0, i.e., if h has relative degree 1 subject to
+minimizing the difference between this input and and the
+desired input. This can be framed as an optimization problem,
+and specifically a quadratic program (QP):
+v ∗ (x, t) = argmin kv − vdes (x, t)k2
+
+(10)
+
+v∈Rn
+
+III. P OTENTIAL F IELDS AS C ONTROL BARRIER
+F UNCTIONS
+In this section, we show the main result of this paper:
+that potential fields are a specific instance of control barrier
+functions. This will be demonstrated by explicitly constructing
+a CBF from a potential field. Importantly, this transformation
+results in additional beneficial properties that the original
+controller did not benefit from. Thus, control barrier functions
+generalize potential fields. Subsequent sections will practically
+demonstrate this in simulation and on hardware.
+
+s.t. ∇h(x)T v ≥ −αh(x),
+where v ∗ (x, t) is the pointwise optimal controller. This is an
+important and substantial divergence from potential fields in
+that gradients are no longer used for synthesis. Rather, one can
+optimize over controllers that satisfy the safety constraint. To
+see how this difference manifests itself, we return to Example
+1 but, instead, apply control barrier functions.
+Example 2. Consider the same setup as Example 1. The
+desired velocity command is a simple P controller on position,
+vdes (x, t) = −K(x − xgoal ),
+
+(11)
+
+with K = 1. Note that this is equivalent to the ∇Uatt from
+the previous example, as the attractive force functions as a P
+controller on position. The control barrier function, as inspired
+by ρ in (4), is given by:
+h(x) = min kx − xOi k − Dobs ,
+i∈{1,2}
+
+(12)
+
+x−xOi
+where ∇h(x) = kx−x
+, for the closer obstacle i, and
+Oi k
+here we pick Dobs = 0.5. Note that, technically, this barrier
+function is non-smooth, but the methods from [18] can be
+employed. Practically, the obstacles are distances so no issues
+with continuity are encountered.
+The simulation is run for varying values of α, and the
+results are shown in Figure 2(b). For all values of α, the robot
+safely completes the mission and suffers from no oscillations.
+Additionally, one can see the minimally invasive behavior of
+(10) in that the nominal trajectories to goal are modified to a
+much smaller degree when compared against potential fields.
+
+A. Control Barrier Functions
+We begin by introducing the general definition of control
+barrier functions, for which the constructions in Section II-B
+are a special case. In particular, the advantage of CBFs is
+that they can be applied to general nonlinear control systems.
+Consider a nonlinear system of the form:
+ẋ = f (x) + g(x)u.
+n
+
+m
+
+with state x ∈ R , input u ∈ R , and f, g : R
+assumed to be Lipschitz continuous.
+
+(13)
+n
+
+→ Rn
+
+Definition 1 ([10]). Let S ⊂ Rn be the set defined by a
+continuously differentiable function h : Rn → R:
+S
+
+= {x ∈ Rn : h(x) ≥ 0},
+
+∂S
+
+= {x ∈ Rn : h(x) = 0},
+
+Int(S)
+
+= {x ∈ Rn : h(x) > 0}.
+
+Then h is a control barrier function (CBF) if ∇h(x) 6= 0
+for all x ∈ ∂S and there exists an extended class K function
+([10, Definition 2]) α such that for all x ∈ S, ∃u s.t.
+Lf h(x) + Lg h(x)u ≥ −α(h(x)).
+|
+{z
+}
+
+(14)
+
+ḣ(x,u)
+
+where Lf h(x) := ∇h(x)T f (x) and Lg h(x) := ∇h(x)T g(x).
+The main control barrier function result is that this class
+of functions give sufficient (and necessary) conditions on set
+invariance, i.e., safety of the system relative to S.
+
+Theorem 1 ([10]). Given a control barrier function h :
+Rn → R together with the associated set S, for any Lipschitz
+continuous controller satisfying:
+ḣ(x, u(x)) = Lf h(x) + Lg h(x)u(x) ≥ −α(h(x)),
+the set S is forward invariant, i.e,. safe. Additionally, the set
+S is asymptotically stable.
+Since the constraint (14) is affine in u, the above definition
+can be used to construct a quadratic program that functions
+as a safety filter, guaranteeing the safety of the system by
+enforcing it to stay inside of S. This quadratic program is
+given by:
+u∗ (x) = argmin
+
+ku − udes (x, t)k2
+
+(CBF-QP)
+
+u∈Rm
+
+s.t.
+
+Lf h(x) + Lg h(x)u ≥ −α(h(x))
+
+Note that the potential functions used in the previous section
+meet this definition.
+Main result. The CBF paradigm includes potential fields as a
+special case. In this case, rather than combining the attractive
+and repulsive potentials into a single function, we utilize the
+attractive potential as the desired velocity, and the repulsive
+potential as the control barrier function.
+Theorem 2. Consider an artificial potential field with repulsive potential Urep meeting Definition 2. The function:
+1
+− δ,
+(17)
+h(x) =
+1 + Urep (x)
+with δ ∈ (0, δ0 ) a small constant, is a control barrier function
+for the single integrator: ẋ = v. Additionally, given any
+feedback controller v = k(x) satisfying:
+ḣ(x, k(x)) = ∇h(x)T k(x) ≥ −α(h(x))
+
+Importantly, this QP has an explicit solution given by:
+u∗ (x, t) = udes (x, t) + usafe (x, t)
+
+(15)
+
+where usafe is added to udes if the nominal controller would
+not keep the system safe, which is determined by the sign of
+Ψ(x, t; udes ) := ḣ(x, udes (x, t)) + α(h(x)) via:
+(
+Lg h(x)T
+if Ψ < 0
+− Lg h(x)L
+T Ψ(x, t; udes )
+g h(x)
+usafe (x, t) =
+0
+if Ψ ≥ 0
+(16)
+Through this explicit form, one can begin to see the divergence
+between potential fields and CBFs: the condition statement
+indicates that safety is imposed only when necessary rather
+than always (via the addition of potentials).
+B. Potential Fields as a Special Case of CBFs
+We now present the main result of the paper: showing that
+from a potential field one obtains a control barrier function.
+Importantly, one can use this understanding of potential fields
+to obtain additional beneficial properties of a given potential
+field: from safe set stability to the generalization of potential
+fields to general nonlinear control systems.
+Definition 2. Given a goal state, xgoal ∈ Rn , an attractive
+potential is a positive definite continuously differentiable
+function Uatt : Rn → R, such that there exists c, c > 0 such
+that, ∀ x ∈ Rn :
+ckx − xgoal k2 ≤ Uatt (x) ≤ ckx − xgoal k2 .
+Given an obstacle at xobst and minimum distance Dobst > 0,
+a repulsive potential is a continuously differentiable positive
+semi-definite function Urep : Rn → R, strictly increasing, that
+“blows up” at the minimum distance:
+Positive semi-definite: Urep (x) ≥ 0,
+Strictly increasing: ∇Urep (x) > 0 if kx − xobst k ≤ ρ0
+“Blows up” at obstacle:
+
+lim
+
+kx−xobst k→Dobst
+
+Urep (x) = ∞.
+
+An artificial potential field: U (x) := Uatt (x) + Urep (x),
+yields a controller:
+k(x) = −∇U (x)
+
+⇒
+
+ẋ = −∇U (x).
+
+the set
+S = {x ∈ Rn : h(x) ≥ 0} ⊂ {x ∈ Rn : kx−xobst k ≥ Dobst }
+is forward invariant, i.e., safe, and asymptotically stable.
+Remark 1. Note that the set S depends on the choice of δ
+with:
+lim S = {x ∈ Rn : kx − xobst k ≥ Dobst }.
+
+δ→0
+
+Thus, the smaller the choice of δ, the closer the safe set,
+S, to the complement of the obstacles. Additionally, unlike
+potential fields, in the case when the system starts with an
+initial condition outside of S the CBF will both be well defined
+and the system will asymptotically stabilize back to S.
+Proof. Taking the gradient of h(x) yields
+∇Urep (x)
+.
+(1 + Urep (x))2
+To be a control barrier function, we first require that ∇Urep 6=
+0 when h(x) = 0. When h(x) = 0, we have that
+1
+1
+−δ =0
+=⇒
+Urep (x) = − 1
+1 + Urep (x)
+δ
+Since Urep “blows up” with proximity to obstacles, one can
+pick δ0 > 0 such that for all δ ∈ (0, δ0 ) it follows that h(x) =
+0 implies that kx − xobst k ≤ ρ0 . Therefore, by the strictly
+increasing assumption, ∇Urep 6= 0.
+For the single integrator dynamics, the CBF requirement
+given in Equation (14) is trivially met, as Lf h(x) = 0 and
+Lg h(x) = ∇h(x)T v, so there always exists a velocity such
+∇U v
+that − (1+Ureprep(x))2 ≥ −α(h(x)). Therefore, h is a CBF and
+the remaining statements follow from Theorem 1.
+∇h(x) = −
+
+Controller synthesis. The advantage of CBFs is that they
+allow for controller synthesis where the attractive and repulsive potentials are combined in a pointwise optimal fashion.
+Specifically, using −∇Uatt (x) as the desired velocity, we have:
+v ∗ (x) = argmin kv + ∇Uatt (x)k2
+v∈Rn
+
+s.t. −
+
+T
+∇Urep
+v
+≥ −α(h(x)).
+(1 + Urep (x))2
+
+(18)
+
+Importantly, this controller has an explicit solution:
+IV. A PPLICATION TO Q UADROTORS
+(
+In the previous sections, our examples involved single
+∇h(x)
+− ∇h(x)
+T ∇h(x) Ψ(x; Uatt ) if Ψ < 0
+integrators where the velocity commands from the APFs and
+v ∗ (x) = −∇Uatt (x) +
+0
+if Ψ ≥ 0 the CBFs are tracked perfectly by the system. This section
+(19) will consider the application of the ideas presented on systems
+with non-trivial dynamics and, specifically, quadrotors. While
+T
+we could apply the previous results, e.g., Proposition 1, this
+for Ψ = Ψ(x; Uatt ) := −∇h(x) ∇Uatt (x) + α(h(x)).
+Note the parallels between this function and the original arti- would require both detailed model information and the ability
+ficial potential field, where the repulsive potential only plays a to achieve torque control. On quadrotors this is difficult in
+difference when within a certain radius ρ0 . Now, the attractive practice. We thus describe the process of translating the formal
+potential is used unless −∇h(x)T ∇Uatt + α(h(x)) < 0, in results to practice via velocity-based tracking controllers.
+which case the CBF minimally alters the velocity inputs in Motivation: double integrator. To illustrate the issue with
+order to maintain safety.
+utilizing model-free collision avoidance on systems with nonExample 3. Consider the APF given in Example 1. The
+repulsive potential is given by (3), which is used to make
+the barrier function (17), with value δ = 0.001. The attractive
+potential given by (3) with gradient (6) is used in the desired
+velocity controller.
+By applying the APF-CBF QP given in (18) or the explicit
+solution (19), the path shown in 2(c) is obtained for tuning
+parameters Krep = Katt = α = 1. One can see improved performance for the APF-CBF QP obtained from the APF when
+compared against the original APF, wherein the APF-CBF QP
+gets closer to the obstacles with fewer oscillations. Moreover,
+when the robot has passed the obstacle and is moving towards
+the goal, the APF-CBF converges more quickly to the desired
+path.
+Extending APFs to nonlinear systems. It is important to
+note that the connection between APFs and CBFs allows for
+potential fields to be generalized to a nonlinear setting with
+ease. In particular, since CBFs are defined general nonlinear
+control systems, as in (13), we can use the instantiation of
+APFs as CBFs to easy extend APFs to a nonlinear setting.
+Proposition 1. Consider a nonlinear control system of the
+form: ẋ = f (x) + g(x)u. Assume the existence of a potential
+field as given in Definition 2 with the associated safety
+constraint, h, given in (17). If the repulsive potential, Urep ,
+satisfies the CBF condition:
+∇Urep (x)T g(x) = 0
+
+⇒
+
+−
+
+trivial dynamics, we will compare the performance of the same
+artificial potential field and control barrier function described
+in Examples 1 and 2, but applied to a double integrator:
+ẋ = v
+v̇ = u
+
+(21)
+
+The velocity outputs of the safety filters, denoted v ∗ (x), are
+now tracked by the velocity-based controller:
+u(x, v) = −K(v − v ∗ (x)).
+
+(22)
+
+The velocity-based controller is implemented for v ∗ obtained from APFs and CBFs (per Examples 1 and 2). For
+the APF, the ρ0 values of 1 and 2, the APF is able to
+keep the system safe while reaching the goal. However, large
+oscillations occur while approaching the first obstacle. The
+oscillations are not present with ρ0 equal to 0.5, but safety is
+no longer maintained. Eliminating these oscillations and maintaining safety is possible, but would require additional tuning.
+For CBFs, safety could be trivially guaranteed by utilizing
+the double integrator dynamics in the CBF-QP, but we instead
+utilize the velocity-based controller from Example 2. Safety is
+maintained for α values of 0.5 and 1, but it is not maintained
+for α = 2. This biggest difference between the performance
+of the CBF and the APF is the lack of oscillations when
+approaching the obstacles, with CBFs resulting in smoother
+controllers. This is a trend that will be seen in simulation and
+experimentally on the quadrotor.
+
+∇Urep (x)T f (x)
+≥ −α(h(x)),
+(1 + Urep (x))2
+
+for some extended class K function α then the controller:
+u∗ (x) = argmin ku + ∇Uatt (x)k2
+
+(20)
+
+v∈Rn
+
+s.t. −
+
+T
+∇Urep
+(f (x) + g(x)u)
+≥ −α(h(x)).
+(1 + Urep (x))2
+
+renders the set {x ∈ Rn : kx − xobst k ≥ Dobst } forward
+invariant, i.e., a controller that ensures safety.
+Proof. The CBF condition is simply: Lg h(x) = 0 implies that
+Lf h(x) ≥ −α(h(x)). One can verify that this implies that (16)
+is well defined, thus (14) is satisfied and h is a CBF. The result
+then follows by combining Theorem 1 with Theorem 2.
+
+Fig. 3: Potential Fields and CBFs on a double integrator.
+
+Fig. 4: Simulation results for the quadrotor with APFs and CBFs for the five scenarios considered in this paper.
+
+Application to Quadrotors in Simulation. To provide
+a more realistic comparison of APFs and CBFs realized as
+velocity-based controllers (22), we consider their application
+to quadrotors in the context of obstacle avoidance. In
+particular, we compare the APF and CBF velocity-based
+controllers in a high-fidelity simulation environment based
+on the physical hardware that will be detailed in the next
+section (see Fig. 5). The dynamics and low-level control is
+provided by the ArduPilot SITL simulator, and the velocity
+commands are produced and filtered in ROS nodes using
+simulated LIDAR sensor data from Gazebo.
+In the context of the APF velocity-based controller, we will
+utilize the general form given in Example 1, with the same
+attractive potential as given in (2). The repulsive potential is
+replaced with a more modern potential field formulation that
+has been tuned for a quadrotor in simulation—this was done
+to avoid the repulsive potential from becoming ill-posed when
+realized in practice. In particular, the repulsive potential is
+taken from [21] yielding the repulsive force:
+ 2
+ρ
+(23)
+Frep = (x − xOi )Krep exp −
+ρ0
+with ρ = kx − xOi k. The values of Krep and ρ0 were tuned
+until oscillations vanished in practical cases, and safety was
+achieved, but optimized such that they do not affect flight when
+collision is unlikely.
+For the CBF-based velocity controller, we use a formulation
+identical to Example 2. In particular, the barrier function is
+given as in (12), where xOi is the ith point of the simulated
+laser scan, and Dobs = 0.3 represents the minimum distance
+that the drone must maintain from the obstacles. Utilizing this
+with the single integrator dynamics results in the control law in
+(10) which is passed to a low-level velocity tracking controller.
+The value of α kept to 1, to ensure that no tuning is performed
+to improve the results.
+For each experiment, the quadrotor is given a waypoint 5m
+ahead in the x-direction. The five tests are described as follows,
+in order of difficulty for the collision avoidance algorithms:
+(1) in between the quadrotor and the goal, two obstacles are
+placed that are offset from the center of the path, but close
+enough to effect the drone. (2) A single obstacle is placed
+such that the edge of the obstacle aligns with the center of
+the drone. This is done to ensure that the drone is able to find
+a path around it, but to strongly obstruct the drone. (3) Two
+obstacles are placed with edges 1 m apart, to mimic a 1 m
+wide doorway, and the drone has to fly through this to reach
+the goal. (4) The doorway from the previous test is reduced
+
+to 0.7 m in width. (5) In between the starting position and the
+goal is a large wall that the drone is not able to pass. This is
+to test the oscillations that may occur when running directly
+at an obstacle that is in front of the goal.
+Each of the five tests are run for both the artificial potential
+field, as well as the control barrier function. The setups and
+paths are shown in Figure 4, along with the velocities. Oscillations do not occur for the CBF velocity-based controller, and
+only occur for the APF based controller situations where the
+drone is unable to get to the goal, e.g., the wall and the 0.7
+m doorway. In all cases, the CBF is able to get closer to the
+obstacles while staying safe due to its pointwise optimally.
+V. E XPERIMENTAL R ESULTS
+In this section, we compare the performance of the two
+methods on a quadrotor. Localization and obstacle detection
+are done entirely onboard, using onboard sensors, making this
+a very practical comparison for real-world use. Practically, we
+realize the APF and CBF controllers as outlined in Sect. IV.
+Hardware setup. The quadrotor used for experiments is
+shown in Figure 5. It consists of a Lumenier Defender frame,
+four T-Motor F40 PRO II 1600 KV brushless motors, a Lumenier 50A 4-in-1 ESC, a mRobotics Pixracer R15 autopilot,
+a T265 RealSense camera, a Intel NUC i7 onboard computer,
+and a Hokuyo UST-10LX LIDAR. The Hokuyo UST-10LX
+2D LIDAR gives 1080 points in front of the quadrotor in a
+270◦ field of view along the XY plane. Google’s Cartographer
+SLAM package was used with the Hokuyo LIDAR and the
+RealSense camera for localization. Additionally, the Hokuyo
+LIDAR is used for obstacle detection and avoidance. An Intel
+NUC i7 onboard computer is used to run the ROS nodes
+that perform the localization and collision avoidance. The
+high-level velocity commands are passed from the onboard
+computer to the Pixracer flight controller. The flight controller
+utilizes a cascading PID control structure of velocity, acceleration, attitude, and angular rate.
+Simulation vs hardware results. The same five tests described in the previous section (see Fig. 4) were implemented
+on the hardware, and the results are shown in Fig. 7. The
+only difference in the setup was that the drone is now
+commanded to yaw 180◦ and return along the same path,
+in order to maximize the amount of data for the analysis.
+While the hardware results are similar to simulation for CBFs,
+the artificial potential field suffers from significantly more
+oscillations than in the high-fidelity simulation environment.
+This suggests that the CBF implementation is more robust to
+
+Fig. 5: The quadrotor used in the experiments.
+
+Fig. 6: Partial trajectory and CBF data from the manual flight.
+
+model uncertainty and noise, as the APF would need to be
+tuned again to eliminate oscillations due to the differences
+between the simulation and reality. Finally, APFs fail to reach
+the goal in the case of the narrow door, while the CBFs
+succeeds. Thus, the CBFs outperformed APFs on hardware.
+
+[6] J. Ren, K. A. McIsaac, and R. V. Patel, “Modified newton’s method
+applied to potential field-based navigation for mobile robots,” IEEE
+Transactions on Robotics, vol. 22, no. 2, pp. 384–391, 2006.
+[7] G. Li, A. Yamashita, H. Asama, and Y. Tamura, “An efficient improved
+artificial potential field based regression search method for robot path
+planning,” in 2012 IEEE International Conference on Mechatronics and
+Automation. IEEE, 2012, pp. 1227–1232.
+[8] Y.-b. Chen, G.-c. Luo, Y.-s. Mei, J.-q. Yu, and X.-l. Su, “Uav path
+planning using artificial potential field method updated by optimal
+control theory,” International Journal of Systems Science, vol. 47, no. 6,
+pp. 1407–1420, 2016.
+[9] A. D. Ames, J. W. Grizzle, and P. Tabuada, “Control barrier function
+based quadratic programs with application to adaptive cruise control,”
+in 53rd IEEE Conference on Decision and Control. IEEE, 2014, pp.
+6271–6278.
+[10] A. D. Ames, X. Xu, J. W. Grizzle, and P. Tabuada, “Control barrier
+function based quadratic programs for safety critical systems,” IEEE
+Transactions on Automatic Control, vol. 62, no. 8, pp. 3861–3876, 2017.
+[11] X. Xu, P. Tabuada, J. W. Grizzle, and A. D. Ames, “Robustness of
+control barrier functions for safety critical control,” IFAC-PapersOnLine,
+vol. 48, no. 27, pp. 54–61, 2015.
+[12] T. Gurriet, A. Singletary, J. Reher, L. Ciarletta, E. Feron, and A. Ames,
+“Towards a framework for realizable safety critical control through active
+set invariance,” in 2018 ACM/IEEE 9th International Conference on
+Cyber-Physical Systems (ICCPS). IEEE, 2018, pp. 98–106.
+[13] Q. Nguyen, A. Hereid, J. W. Grizzle, A. D. Ames, and K. Sreenath, “3d
+dynamic walking on stepping stones with control barrier functions,” in
+2016 IEEE 55th Conference on Decision and Control (CDC). IEEE,
+2016, pp. 827–834.
+[14] M. Jankovic, “Robust control barrier functions for constrained stabilization of nonlinear systems,” Automatica, vol. 96, pp. 359–367, 2018.
+[15] C. T. Landi, F. Ferraguti, S. Costi, M. Bonfè, and C. Secchi, “Safety barrier functions for human-robot interaction with industrial manipulators,”
+in 2019 18th ECC. IEEE, 2019, pp. 2565–2570.
+[16] W. S. Cortez, D. Oetomo, C. Manzie, and P. Choong, “Control barrier
+functions for mechanical systems: Theory and application to robotic
+grasping,” IEEE Transactions on Control Systems Technology, 2019.
+[17] L. Wang, A. Ames, and M. Egerstedt, “Safety barrier certificates for
+collisions-free multi-robot systems,” IEEE Transactions on Robotics,
+vol. 33, no. 3, pp. 661–674, 2017.
+[18] P. Glotfelter, J. Cortés, and M. Egerstedt, “Nonsmooth barrier functions
+with applications to multi-robot systems,” IEEE control systems letters,
+vol. 1, no. 2, pp. 310–315, 2017.
+[19] L. Wang, A. D. Ames, and M. Egerstedt, “Safe certificate-based maneuvers for teams of quadrotors using differential flatness,” in 2017 IEEE
+International Conference on Robotics and Automation (ICRA). IEEE,
+2017, pp. 3293–3298.
+[20] A. D. Ames, S. Coogan, M. Egerstedt, G. Notomista, K. Sreenath, and
+P. Tabuada, “Control barrier functions: Theory and applications,” in 2019
+18th European Control Conference (ECC). IEEE, 2019, pp. 3420–3431.
+[21] V. Gazi, B. Fİdan, Y. S. Hanay, and İ. Köksal, “Aggregation, foraging,
+and formation control of swarms with non-holonomic agents using
+potential functions and sliding mode techniques,” Turkish Journal of
+Electrical Engineering & Computer Sciences, vol. 15, no. 2, pp. 149–
+168, 2007.
+[22] “Video of the experiments.” https://vimeo.com/468799586.
+
+Manual flight. In addition to replicating the tests performed
+in simulation, the drone was also piloted manually through a
+more complicated obstacle course, to show the robustness of
+the control barrier function to sporadic user inputs. The pilot
+is trying to run the system towards the obstacles, but the CBF
+prevents the drone from crashing. The results are shown in
+Figure 6 where it can be seen that the quadrotor gets close to
+the wall, but safety is maintained.
+VI. C ONCLUSIONS
+In this paper, we showed that control barrier functions
+offer a viable, and arguably improved, alternative to artificial
+potential fields for real-time obstacle avoidance. It was shown
+that artificial potential fields can be formulated as control
+barrier functions, and the resulting behavior is smoother than
+the APF alone. CBFs were then implemented on a quadrotor
+via velocity-based control in simulation and on hardware,
+with no tuning whatsoever, and the results outperformed the
+existing (expertly tuned) APF-based collision avoidance system. Future work includes extending the model-based formal
+guarantees presented in this paper to the velocity-based modelfree controller implemented in practice, along with further
+hardware demonstrations on dynamic robotic systems.
+R EFERENCES
+[1] O. Khatib, “Real-time obstacle avoidance for manipulators and mobile
+robots,” in Autonomous robot vehicles. Springer, 1986, pp. 396–404.
+[2] J. Barraquand, B. Langlois, and J.-C. Latombe, “Numerical potential
+field techniques for robot path planning,” IEEE transactions on systems,
+man, and cybernetics, vol. 22, no. 2, pp. 224–241, 1992.
+[3] C. W. Warren, “Global path planning using artificial potential fields,”
+in 1989 IEEE International Conference on Robotics and Automation.
+IEEE Computer Society, 1989, pp. 316–317.
+[4] M. C. Lee and M. G. Park, “Artificial potential field based path planning
+for mobile robots using a virtual obstacle concept,” in Proceedings
+2003 IEEE/ASME International Conference on Advanced Intelligent
+Mechatronics (AIM 2003), vol. 2. IEEE, 2003, pp. 735–740.
+[5] S. S. Ge and Y. J. Cui, “Dynamic motion planning for mobile robots
+using potential field method,” Autonomous robots, vol. 13, no. 3, pp.
+207–222, 2002.
+
+Fig. 7: Hardware results for the control barrier function and artificial potential field. Note that the APF showcases the drone as
+it goes to the goal, while the CBF is pictured returning to the start position. Due to symmetry of the setup, these trips almost
+identical for each method, and the plots contain data for the round trip. The video found here [22] shows both directions for
+each of the experiments from three different angles. The first two columns show the velocities in the north and east directions,
+and the final column shows the value of ρ(x) − 0.3 for the APF on the left, and h(x) for the barrier on the right.
+
+
